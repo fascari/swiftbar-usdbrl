@@ -22,7 +22,6 @@ type Client struct {
 	connectTimeout time.Duration
 }
 
-// NewClient accepts a nil transport for the default connection policy. All requests have an 8 s limit.
 func NewClient(rt http.RoundTripper) Client {
 	if rt == nil {
 		dialer := net.Dialer{Timeout: connectTimeout}
@@ -47,7 +46,6 @@ func NewClient(rt http.RoundTripper) Client {
 	}
 }
 
-// Fetch requires HTTPS, rejects redirects and reports failures as FetchError.
 func (c Client) Fetch(ctx context.Context, source Source, url string) (Quote, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil || req.URL.Scheme != "https" || req.URL.Hostname() == "" {
@@ -83,43 +81,49 @@ func (c Client) Fetch(ctx context.Context, source Source, url string) (Quote, er
 }
 
 func decodeResponse(source Source, resp *http.Response) (Quote, error) {
-	var kind ErrorKind
-	status := resp.StatusCode
-	switch {
-	case status >= http.StatusBadRequest:
-		kind = HTTPError
-	case status < http.StatusOK || status >= http.StatusMultipleChoices:
-		kind = Invalid
-	case resp.ContentLength > maxBodyBytes:
-		kind = Other
+	body, err := readResponse(resp)
+	if err != nil {
+		return Quote{}, err
 	}
-	if kind != 0 {
-		return Quote{}, responseError(kind, status)
+	q, err := parseQuote(source, body)
+	if err != nil {
+		return Quote{}, responseError(Invalid, resp.StatusCode)
+	}
+	return q, nil
+}
+
+func readResponse(resp *http.Response) ([]byte, error) {
+	status := resp.StatusCode
+	if status >= http.StatusBadRequest {
+		return nil, responseError(HTTPError, status)
+	}
+	if status < http.StatusOK || status >= http.StatusMultipleChoices {
+		return nil, responseError(Invalid, status)
+	}
+	if resp.ContentLength > maxBodyBytes {
+		return nil, responseError(Other, status)
 	}
 
 	body, err := io.ReadAll(io.LimitReader(resp.Body, maxBodyBytes+1))
 	if err != nil {
-		kind = requestError(err).Kind
+		kind := requestError(err).Kind
 		if kind != NoConnection {
 			kind = HTTPError
 		}
-		return Quote{}, responseError(kind, status)
+		return nil, responseError(kind, status)
 	}
 	if len(body) > maxBodyBytes {
-		return Quote{}, responseError(Other, status)
+		return nil, responseError(Other, status)
 	}
+	return body, nil
+}
 
-	var q Quote
-	switch source {
-	case Yahoo:
-		q, err = parseYahoo(body)
-	case Awesome:
-		q, err = parseAwesome(body)
-	default:
-		err = errInvalidQuote
+func parseQuote(source Source, body []byte) (Quote, error) {
+	if source == Yahoo {
+		return parseYahoo(body)
 	}
-	if err != nil {
-		return Quote{}, responseError(Invalid, status)
+	if source == Awesome {
+		return parseAwesome(body)
 	}
-	return q, nil
+	return Quote{}, errInvalidQuote
 }

@@ -6,23 +6,31 @@ import (
 	"strings"
 )
 
-type feedNumber string
+type (
+	feedNumber string
 
-type yahooResponse struct {
-	Chart struct {
-		Result []struct {
-			Meta struct {
-				Symbol    string     `json:"symbol"`
-				Currency  string     `json:"currency"`
-				Price     feedNumber `json:"regularMarketPrice"`
-				ChangePct feedNumber `json:"regularMarketChangePercent"`
-				High      feedNumber `json:"regularMarketDayHigh"`
-				Low       feedNumber `json:"regularMarketDayLow"`
-				Time      feedNumber `json:"regularMarketTime"`
-			} `json:"meta"`
-		} `json:"result"`
-	} `json:"chart"`
-}
+	yahooResponse struct {
+		Chart yahooChart `json:"chart"`
+	}
+
+	yahooChart struct {
+		Result []yahooResult `json:"result"`
+	}
+
+	yahooResult struct {
+		Meta yahooMeta `json:"meta"`
+	}
+
+	yahooMeta struct {
+		Symbol    string       `json:"symbol"`
+		Currency  currencyCode `json:"currency"`
+		Price     feedNumber   `json:"regularMarketPrice"`
+		ChangePct feedNumber   `json:"regularMarketChangePercent"`
+		High      feedNumber   `json:"regularMarketDayHigh"`
+		Low       feedNumber   `json:"regularMarketDayLow"`
+		Time      feedNumber   `json:"regularMarketTime"`
+	}
+)
 
 func parseYahoo(body []byte) (Quote, error) {
 	var reply yahooResponse
@@ -34,7 +42,7 @@ func parseYahoo(body []byte) (Quote, error) {
 		return Quote{}, errInvalidQuote
 	}
 	meta := reply.Chart.Result[0].Meta
-	isDollarReal := (meta.Symbol == "USDBRL=X" || meta.Symbol == "BRL=X") && meta.Currency == "BRL"
+	isDollarReal := (meta.Symbol == "USDBRL=X" || meta.Symbol == "BRL=X") && meta.Currency == currencyBRL
 	if !isDollarReal {
 		return Quote{}, errInvalidQuote
 	}

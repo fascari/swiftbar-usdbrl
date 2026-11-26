@@ -12,18 +12,22 @@ import (
 const (
 	Yahoo   Source = "yahoo"
 	Awesome Source = "awesome"
+
+	currencyUSD currencyCode = "USD"
+	currencyBRL currencyCode = "BRL"
 )
 
 var (
-	decimal       = regexp.MustCompile(`^[0-9]+(\.[0-9]+)?$`)
-	signedDecimal = regexp.MustCompile(`^-?[0-9]+(\.[0-9]+)?$`)
-	epoch         = regexp.MustCompile(`^[0-9]{9,11}$`)
+	decimal         = regexp.MustCompile(`^[0-9]+(\.[0-9]+)?$`)
+	signedDecimal   = regexp.MustCompile(`^-?[0-9]+(\.[0-9]+)?$`)
+	epoch           = regexp.MustCompile(`^[0-9]{9,11}$`)
+	errInvalidQuote = errors.New("invalid quote")
 )
-
-var errInvalidQuote = errors.New("invalid quote")
 
 type (
 	Source string
+
+	currencyCode string
 
 	Quote struct {
 		Source    Source
@@ -43,6 +47,10 @@ type (
 	}
 )
 
+func isUSDToBRL(from, to currencyCode) bool {
+	return from == currencyUSD && to == currencyBRL
+}
+
 func (s Source) Attribution() (name, href string) {
 	if s == Yahoo {
 		return "Yahoo Finance", "https://finance.yahoo.com/quote/USDBRL%3DX/"
@@ -61,7 +69,6 @@ func (q Quote) Line() string {
 	}, "\t")
 }
 
-// ParseLine also accepts cache lines written by v1.1.1.
 func ParseLine(line string) (Quote, error) {
 	fields := strings.Split(strings.TrimSuffix(line, "\n"), "\t")
 	if len(fields) != 6 {

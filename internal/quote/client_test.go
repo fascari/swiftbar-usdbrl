@@ -2,11 +2,13 @@ package quote
 
 import (
 	"bytes"
+	"context"
 	"io"
 	"net/http"
 	"net/url"
 	"strings"
 	"testing"
+	"testing/iotest"
 	"time"
 
 	"github.com/stretchr/testify/require"
@@ -68,6 +70,24 @@ func TestFetch_ShouldClassifyResponses(t *testing.T) {
 			body:   strings.NewReader(strings.Repeat(" ", 65537)),
 			want: FetchError{
 				Kind:   Other,
+				Status: http.StatusOK,
+			},
+		},
+		{
+			name:   "truncated response",
+			status: http.StatusOK,
+			body:   iotest.ErrReader(io.ErrUnexpectedEOF),
+			want: FetchError{
+				Kind:   HTTPError,
+				Status: http.StatusOK,
+			},
+		},
+		{
+			name:   "response read timeout",
+			status: http.StatusOK,
+			body:   iotest.ErrReader(context.DeadlineExceeded),
+			want: FetchError{
+				Kind:   NoConnection,
 				Status: http.StatusOK,
 			},
 		},

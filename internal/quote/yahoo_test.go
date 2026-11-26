@@ -8,11 +8,13 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-//go:embed testdata/yahoo.json
-var yahooJSON []byte
+var (
+	//go:embed testdata/yahoo.json
+	yahooJSON []byte
 
-//go:embed testdata/yahooprecision.json
-var yahooPrecisionJSON []byte
+	//go:embed testdata/yahooprecision.json
+	yahooPrecisionJSON []byte
+)
 
 func TestParseYahoo_ShouldUseLegacyNumericPrecision(t *testing.T) {
 	got, err := parseYahoo(yahooPrecisionJSON)
