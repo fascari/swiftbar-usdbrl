@@ -25,22 +25,21 @@ func (r Runner) handleAction(ctx context.Context, args []string) {
 	case menu.ActionSetInterval:
 		r.setInterval(value)
 	case menu.ActionSetLanguage:
-		if locale.Supported(value) {
-			_ = atomicfile.Write(r.paths.language, value+"\n")
-		}
+		r.setLanguage(value)
 	case menu.ActionAddAlert:
 		r.addAlert(ctx, value)
 	case menu.ActionRemoveAlert:
-		if len(args) > 2 {
-			r.editAlerts(func(current []alert.Alert) {
-				_ = r.saveAlerts(alert.Remove(current, alert.Direction(value), args[2]))
-			})
-		}
+		r.removeAlert(args[1:])
 	case menu.ActionClearAlerts:
-		r.editAlerts(func(_ []alert.Alert) {
-			_ = r.saveAlerts(nil)
-		})
+		r.clearAlerts()
 	}
+}
+
+func (r Runner) setLanguage(code string) {
+	if !locale.Supported(code) {
+		return
+	}
+	_ = atomicfile.Write(r.paths.language, code+"\n")
 }
 
 func (r Runner) setInterval(value string) {
@@ -58,19 +57,12 @@ func (r Runner) setInterval(value string) {
 
 func (r Runner) addAlert(ctx context.Context, value string) {
 	q, _ := r.cache()
-	s := locale.For(r.language())
 	if q == nil {
+		s := locale.For(r.language())
 		_ = r.dep.Notifier.Notify(ctx, s.Text("alert_no_rate"))
 		return
 	}
-	var target string
-	var err error
-	switch value {
-	case "":
-		target, err = r.askTarget(ctx, s, q.Price)
-	default:
-		target, err = alert.ParseTarget(value)
-	}
+	target, err := r.alertTarget(ctx, value, q.Price)
 	if err != nil {
 		return
 	}
@@ -83,7 +75,27 @@ func (r Runner) addAlert(ctx context.Context, value string) {
 	})
 }
 
-func (r Runner) askTarget(ctx context.Context, s locale.Language, price float64) (string, error) {
+func (r Runner) removeAlert(args []string) {
+	if len(args) < 2 {
+		return
+	}
+	direction, target := alert.Direction(args[0]), args[1]
+	r.editAlerts(func(current []alert.Alert) {
+		_ = r.saveAlerts(alert.Remove(current, direction, target))
+	})
+}
+
+func (r Runner) clearAlerts() {
+	r.editAlerts(func(_ []alert.Alert) {
+		_ = r.saveAlerts(nil)
+	})
+}
+
+func (r Runner) alertTarget(ctx context.Context, value string, price float64) (string, error) {
+	if value != "" {
+		return alert.ParseTarget(value)
+	}
+	s := locale.For(r.language())
 	answer := s.Number(price)
 	basePrompt := s.Text("alert_prompt")
 	prompt := basePrompt
@@ -121,7 +133,6 @@ func (r Runner) saveAlerts(alerts []alert.Alert) error {
 	return err
 }
 
-// editAlerts holds the lock for the entire read and edit. It skips edit if locking fails.
 func (r Runner) editAlerts(edit func([]alert.Alert)) bool {
 	lock, err := filelock.Lock(r.paths.alertsLock)
 	if err != nil {

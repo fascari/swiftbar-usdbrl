@@ -5,7 +5,6 @@ import (
 	"path/filepath"
 )
 
-// Write replaces the file atomically with mode 0600 and creates missing directories with mode 0700.
 func Write(path, text string) error {
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0o700); err != nil {

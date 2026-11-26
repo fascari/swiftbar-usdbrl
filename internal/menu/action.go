@@ -1,7 +1,5 @@
 package menu
 
-type Action string
-
 const (
 	ActionSetInterval Action = "--set-interval"
 	ActionSetLanguage Action = "--set-lang"
@@ -9,3 +7,5 @@ const (
 	ActionRemoveAlert Action = "--remove-alert"
 	ActionClearAlerts Action = "--clear-alerts"
 )
+
+type Action string

@@ -40,18 +40,18 @@ func (r Runner) refreshView(ctx context.Context) (menu.View, []alert.Alert) {
 			_ = lock.Close()
 		}()
 	}
+
 	cached, lastOK := r.cache()
-	lang := r.language()
-	s := locale.For(lang)
-	fresh, warning, err := r.fetch(ctx, s, lock)
 	view := menu.View{
 		Quote:    cached,
 		LastOK:   lastOK,
-		Now:      r.now(),
 		Location: r.cfg.Location,
-		Language: lang,
+		Language: r.language(),
 		Plugin:   r.cfg.PluginPath,
 	}
+	s := locale.For(view.Language)
+	fresh, warning, err := r.fetch(ctx, s, lock)
+	view.Now = r.now()
 	if err != nil {
 		view.Reason = fmt.Sprintf(s.Text("all_down"), fetchReason(s, err))
 		view.Alerts = r.alerts()
@@ -60,47 +60,37 @@ func (r Runner) refreshView(ctx context.Context) (menu.View, []alert.Alert) {
 
 	view.LastOK = view.Now
 	view.Warning = warning
-	newerCache := newerThan(cached, fresh)
-	if !newerCache {
+	keepCached := cached != nil && cached.Time.After(fresh.Time)
+	if !keepCached {
 		view.Quote = new(fresh)
 	}
-	if lock != nil {
-		r.updateCache(cached, fresh, view.Now)
+	if lock != nil && keepCached {
+		_ = os.Chtimes(r.paths.cache, view.Now, view.Now)
 	}
+	if lock != nil && !keepCached {
+		_ = atomicfile.Write(r.paths.cache, fresh.Line()+"\n")
+	}
+
 	fired, remaining := r.collectAlerts(view.Quote.Price)
 	view.Alerts = remaining
 	return view, fired
 }
 
-func newerThan(cached *quote.Quote, fresh quote.Quote) bool {
-	return cached != nil && cached.Time.After(fresh.Time)
-}
-
-// updateCache records a successful check even when the fallback quote is older than the cache.
-func (r Runner) updateCache(cached *quote.Quote, fresh quote.Quote, now time.Time) {
-	if newerThan(cached, fresh) {
-		_ = os.Chtimes(r.paths.cache, now, now)
-		return
-	}
-	_ = atomicfile.Write(r.paths.cache, fresh.Line()+"\n")
-}
-
 func (r Runner) fetch(ctx context.Context, s locale.Language, lock *os.File) (quote.Quote, string, error) {
-	warning, paused := r.pausedWarning(s)
-	if !paused {
-		q, err := r.dep.Sources.Fetch(ctx, quote.Yahoo, r.cfg.YahooURL)
-		if err == nil {
-			if lock != nil {
-				_ = os.Remove(r.paths.pause)
-			}
-			return q, "", nil
-		}
-		reason := fetchReason(s, err)
-		warning = fmt.Sprintf(s.Text("yahoo_down"), reason)
-		if lock != nil {
-			r.pauseYahoo(reason)
-		}
+	if warning, paused := r.pausedWarning(s); paused {
+		return r.fetchFallback(ctx, warning)
 	}
+	q, err := r.dep.Sources.Fetch(ctx, quote.Yahoo, r.cfg.YahooURL)
+	if err == nil {
+		r.updateYahooPause(lock, "")
+		return q, "", nil
+	}
+	reason := fetchReason(s, err)
+	r.updateYahooPause(lock, reason)
+	return r.fetchFallback(ctx, fmt.Sprintf(s.Text("yahoo_down"), reason))
+}
+
+func (r Runner) fetchFallback(ctx context.Context, warning string) (quote.Quote, string, error) {
 	q, err := r.dep.Sources.Fetch(ctx, quote.Awesome, r.cfg.AwesomeURL)
 	return q, warning, err
 }
@@ -115,7 +105,14 @@ func (r Runner) pausedWarning(s locale.Language) (string, bool) {
 	return fmt.Sprintf(s.Text("yahoo_paused"), cmp.Or(reason, "?")), true
 }
 
-func (r Runner) pauseYahoo(reason string) {
+func (r Runner) updateYahooPause(refreshLock *os.File, reason string) {
+	if refreshLock == nil {
+		return
+	}
+	if reason == "" {
+		_ = os.Remove(r.paths.pause)
+		return
+	}
 	failedAt := r.now()
 	if err := atomicfile.Write(r.paths.pause, reason+"\n"); err == nil {
 		_ = os.Chtimes(r.paths.pause, failedAt, failedAt)
@@ -124,18 +121,19 @@ func (r Runner) pauseYahoo(reason string) {
 
 func fetchReason(s locale.Language, err error) string {
 	fetch, _ := errors.AsType[quote.FetchError](err)
-	switch fetch.Kind {
-	case quote.HTTPError:
+	if fetch.Kind == quote.HTTPError {
 		return s.Text("request_http")
-	case quote.NoConnection:
-		return s.Text("request_connection")
-	case quote.TLS:
-		return s.Text("request_tls")
-	case quote.Invalid:
-		return fmt.Sprintf(s.Text("request_invalid"), fetch.Status)
-	default:
-		return s.Text("request_failed")
 	}
+	if fetch.Kind == quote.NoConnection {
+		return s.Text("request_connection")
+	}
+	if fetch.Kind == quote.TLS {
+		return s.Text("request_tls")
+	}
+	if fetch.Kind == quote.Invalid {
+		return fmt.Sprintf(s.Text("request_invalid"), fetch.Status)
+	}
+	return s.Text("request_failed")
 }
 
 func (r Runner) collectAlerts(price float64) (fired, remaining []alert.Alert) {

@@ -16,10 +16,8 @@ import (
 
 //go:generate mockery --all --case=snake --disable-version-string --with-expecter
 
-const VersionFlag = "--version"
-
-// Preserve the v1.1.1 state filenames so upgrades and downgrades can share them.
 const (
+	// Preserve the v1.1.1 state filenames so upgrades and downgrades can share them.
 	cacheFile       = "last.tsv"
 	pauseFile       = "yahoo.paused"
 	refreshLockFile = ".refresh.lock"
@@ -29,7 +27,6 @@ const (
 )
 
 type (
-	// Sources returns quote.FetchError values so the menu can localize failures.
 	Sources interface {
 		Fetch(ctx context.Context, source quote.Source, url string) (quote.Quote, error)
 	}
@@ -38,22 +35,8 @@ type (
 		Notify(ctx context.Context, message string) error
 	}
 
-	// Prompter prefills answer and returns an error on cancellation.
 	Prompter interface {
 		Ask(ctx context.Context, prompt, answer string) (string, error)
-	}
-)
-
-type (
-	Config struct {
-		CacheDir   string
-		ConfigDir  string
-		PluginPath string
-		YahooURL   string
-		AwesomeURL string
-		Now        func() time.Time
-		Location   *time.Location
-		Version    string
 	}
 
 	Dependencies struct {
@@ -93,13 +76,9 @@ func New(cfg Config, dep Dependencies) Runner {
 	}
 }
 
-// Run renders a refresh with no arguments. Actions return no output except --version.
 func (r Runner) Run(ctx context.Context, args []string) string {
 	if len(args) == 0 {
 		return r.refresh(ctx)
-	}
-	if args[0] == VersionFlag {
-		return r.cfg.Version + "\n"
 	}
 	r.handleAction(ctx, args)
 	return ""
@@ -110,6 +89,13 @@ func (r Runner) Empty() string {
 		Language: r.language(),
 		Plugin:   r.cfg.PluginPath,
 		Alerts:   r.alerts(),
+	})
+}
+
+func MissingHomeMenu() string {
+	return menu.Render(menu.View{
+		Reason: locale.For(locale.English).Text("no_home"),
+		Plugin: pluginPath(),
 	})
 }
 

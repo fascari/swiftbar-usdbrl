@@ -32,7 +32,6 @@ compare() {
   if [[ -n "$source" ]]; then
     printf '%s\t%s\t%s\t5.824\t5.615\t1795704835\n' "$source" "$price" "$change" > "$USDBRL_CACHE_DIR/last.tsv"
   fi
-  # Preload the pause so both commands only try the local, unavailable fallback.
   printf '%s\n' 'no connection or timeout' > "$USDBRL_CACHE_DIR/yahoo.paused"
   bash "$work/legacy.sh" | normalize > "$state/legacy"
   "$PLUGIN" | normalize > "$state/go"

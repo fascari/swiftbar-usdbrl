@@ -11,13 +11,18 @@ import (
 	"time"
 )
 
-//go:embed en.json
-var englishJSON []byte
-
-//go:embed pt.json
-var portugueseJSON []byte
+const (
+	English    Code = "en"
+	Portuguese Code = "pt"
+)
 
 var (
+	//go:embed en.json
+	englishJSON []byte
+
+	//go:embed pt.json
+	portugueseJSON []byte
+
 	english = sync.OnceValues(func() (map[string]string, error) {
 		return load(englishJSON)
 	})
@@ -26,22 +31,18 @@ var (
 	})
 )
 
-type Code string
+type (
+	Code string
 
-const (
-	English    Code = "en"
-	Portuguese Code = "pt"
+	Language struct {
+		portuguese bool
+	}
 )
-
-type Language struct {
-	portuguese bool
-}
 
 func Supported(code string) bool {
 	return Code(code) == English || Code(code) == Portuguese
 }
 
-// Resolve defaults unsupported codes to English.
 func Resolve(code Code) Code {
 	if code == Portuguese {
 		return Portuguese
@@ -49,12 +50,10 @@ func Resolve(code Code) Code {
 	return English
 }
 
-// For defaults unsupported codes to English.
 func For(code Code) Language {
 	return Language{portuguese: Resolve(code) == Portuguese}
 }
 
-// Text returns the message for key, falling back to English and then to the key itself.
 func (l Language) Text(key string) string {
 	defaults, _ := english()
 	if l.portuguese {
@@ -81,20 +80,21 @@ func (l Language) Stamp(at time.Time, loc *time.Location) string {
 }
 
 func (l Language) Ago(age time.Duration) string {
-	const day = 24 * time.Hour
-
-	var text string
-	switch {
-	case age < time.Minute:
+	if age < time.Minute {
 		return l.Text("just_now")
-	case age < time.Hour:
-		text = fmt.Sprintf("%d min", age/time.Minute)
-	case age < day:
-		text = fmt.Sprintf("%d h %02d min", age/time.Hour, (age%time.Hour)/time.Minute)
-	default:
-		text = fmt.Sprintf("%d d %d h", age/day, (age%day)/time.Hour)
 	}
-	return fmt.Sprintf(l.Text("ago"), text)
+	return fmt.Sprintf(l.Text("ago"), elapsed(age))
+}
+
+func elapsed(age time.Duration) string {
+	const day = 24 * time.Hour
+	if age < time.Hour {
+		return fmt.Sprintf("%d min", age/time.Minute)
+	}
+	if age < day {
+		return fmt.Sprintf("%d h %02d min", age/time.Hour, (age%time.Hour)/time.Minute)
+	}
+	return fmt.Sprintf("%d d %d h", age/day, (age%day)/time.Hour)
 }
 
 func load(data []byte) (map[string]string, error) {

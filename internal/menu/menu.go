@@ -14,7 +14,6 @@ import (
 const staleAfter = 15 * time.Minute
 
 type (
-	// View treats a quote as stale when Reason is nonempty.
 	View struct {
 		Quote    *quote.Quote
 		Reason   string
@@ -63,14 +62,7 @@ func (r renderer) empty() {
 func (r renderer) quote(q quote.Quote) {
 	price := r.s.Number(q.Price)
 	change := r.s.Number(math.Abs(q.ChangePct))
-	arrow, color := "•", ""
-	switch {
-	case change == r.s.Number(0):
-	case q.ChangePct > 0:
-		arrow, color = "▲", upColor
-	default:
-		arrow, color = "▼", downColor
-	}
+	arrow, color := r.changeIndicator(q.ChangePct, change)
 	bar := fmt.Sprintf("US$ %s %s %s%%", price, arrow, change)
 	if r.v.Reason != "" {
 		bar += " ⚠"
@@ -91,6 +83,16 @@ func (r renderer) quote(q quote.Quote) {
 	}
 	name, href := q.Source.Attribution()
 	r.out.line(fmt.Sprintf("%s: %s", r.s.Text("source"), name), "href="+href)
+}
+
+func (r renderer) changeIndicator(changePct float64, formatted string) (arrow, color string) {
+	if formatted == r.s.Number(0) {
+		return "•", ""
+	}
+	if changePct > 0 {
+		return "▲", upColor
+	}
+	return "▼", downColor
 }
 
 func (r renderer) check(age time.Duration) {

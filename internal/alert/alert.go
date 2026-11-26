@@ -6,7 +6,6 @@ import (
 	"slices"
 	"strconv"
 	"strings"
-	"unicode"
 )
 
 const (
@@ -30,18 +29,9 @@ type (
 	}
 )
 
-// ParseTarget normalizes input such as "R$ 5,80" to "5.8" and rejects targets that round to zero.
 func ParseTarget(input string) (string, error) {
-	text := strings.Map(func(r rune) rune {
-		switch {
-		case unicode.IsSpace(r):
-			return -1
-		case r == ',':
-			return '.'
-		default:
-			return r
-		}
-	}, input)
+	text := strings.Join(strings.Fields(input), "")
+	text = strings.ReplaceAll(text, ",", ".")
 	value, err := parseValue(strings.TrimPrefix(text, "R$"))
 	if err != nil {
 		return "", err
@@ -53,7 +43,6 @@ func ParseTarget(input string) (string, error) {
 	return strings.TrimSuffix(strings.TrimRight(rounded, "0"), "."), nil
 }
 
-// Parse skips malformed lines and preserves legacy target text for exact removal.
 func Parse(content string) []Alert {
 	var alerts []Alert
 	lines := strings.SplitSeq(content, "\n")
@@ -90,7 +79,6 @@ func Lines(alerts []Alert) string {
 	return text.String()
 }
 
-// Add expects a normalized target from ParseTarget. An identical alert or a full list is a no-op.
 func Add(alerts []Alert, target string, price float64) []Alert {
 	updated := slices.Clone(alerts)
 	if len(alerts) >= maxAlerts {
@@ -122,7 +110,6 @@ func Remove(alerts []Alert, direction Direction, target string) []Alert {
 	})
 }
 
-// Check uses the same two-decimal precision as the menu bar.
 func Check(alerts []Alert, price float64) (fired, remaining []Alert) {
 	current := round(price)
 	for _, a := range alerts {
