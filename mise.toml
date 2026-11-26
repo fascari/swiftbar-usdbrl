@@ -1,26 +1,60 @@
-# Development only: nothing here is needed to run the plugin. Same ShellCheck as GoLand bundles.
 [tools]
+go = "1.26.5"
+golangci-lint = "2.15.0"
+mockery = "2.53.8"
 shellcheck = "0.10.0"
+
+[env]
+GOWORK = "off"
+GOTOOLCHAIN = "local"
+CGO_ENABLED = "0"
+
+[tasks.build]
+description = "Build the Go plugin"
+run = 'go build -trimpath -buildvcs=false -ldflags "-s -w" -o bin/usdbrl ./cmd'
+
+[tasks.lint]
+description = "Lint and check Go formatting"
+run = ["golangci-lint run", "golangci-lint fmt --diff"]
+
+[tasks.fmt]
+description = "Format Go code"
+run = "golangci-lint fmt"
+
+[tasks.tidy]
+description = "Tidy Go module dependencies"
+run = "go mod tidy"
+
+[tasks.mocks]
+description = "Generate Go mocks"
+run = "go generate ./..."
 
 [tasks.check]
 description = "Check shell syntax and lint with ShellCheck"
 run = [
-  "bash -n usdbrl.1m.sh",
   "bash -n install.sh",
   "bash -n test/smoke.sh",
+  "bash -n test/installer.sh",
   "bash -n scripts/release.sh",
-  "shellcheck -s bash usdbrl.1m.sh install.sh test/smoke.sh scripts/release.sh",
+  "bash -n scripts/parity.sh",
+  "shellcheck -s bash install.sh test/smoke.sh test/installer.sh scripts/release.sh scripts/parity.sh",
 ]
 
 [tasks.test]
+description = "Run Go unit tests and the smoke test"
+run = ["go test ./...", {task = "smoke"}]
+
+[tasks.smoke]
 description = "Run the smoke test (needs network)"
-depends = ["check"]
+# noinspection TomlUnresolvedReference
+depends = ["build", "check"]
 run = "bash test/smoke.sh"
 
 [tasks.install]
 description = "Install SwiftBar if needed and this working copy of the plugin (extra flags go to install.sh)"
-depends = ["check"]
-run = "bash install.sh --plugin usdbrl.1m.sh"
+# noinspection TomlUnresolvedReference
+depends = ["build", "check"]
+run = "bash install.sh --plugin bin/usdbrl"
 
 [tasks.uninstall]
 description = "Remove the plugin, its cache and settings (keeps SwiftBar)"

@@ -1,22 +1,10 @@
 #!/bin/bash
-# Installer for the swiftbar-usdbrl plugin.
-#
-# Usage:
-#   install.sh [--login-item] [--interval <n>] [--plugin <file>]
-#   install.sh --uninstall
-#
-#   --login-item     also start SwiftBar at login (macOS asks once for Automation permission)
-#   --interval <n>   refresh interval (30s, 1m, 5m, 1h...); keeps the installed one, or 1m
-#   --plugin <file>  install a local plugin file instead of downloading the release asset
-#   --uninstall      remove the plugin and its cache and settings, keeping SwiftBar
-
 set -euo pipefail
 umask 077
-export PATH=/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin:/usr/local/bin
-
-# Pinned by scripts/release.sh for each release.
-readonly VERSION='v1.1.1'
-readonly PLUGIN_SHA256='e7f7dd15b2b276dc2f2e4e47cd854def06d490d6574988987ff32369fbbd7a6c'
+# scripts/release.sh replaces these assignments when preparing the release installer.
+readonly VERSION='v2.0.0'
+readonly PLUGIN_SHA256_ARM64='unreleased'
+readonly PLUGIN_SHA256_AMD64='unreleased'
 
 readonly REPO='fascari/swiftbar-usdbrl'
 readonly APP='/Applications/SwiftBar.app'
@@ -24,17 +12,46 @@ readonly SWIFTBAR_TEAM_ID='X93LWC49WV' # Ameba Labs, LLC
 readonly PREFS='com.ameba.SwiftBar'
 readonly DEFAULT_PLUGIN_DIR="$HOME/Library/Application Support/SwiftBar/Plugins"
 readonly CACHE_DIR="$HOME/Library/Caches/usdbrl-swiftbar"
-readonly CONFIG_DIR="$HOME/Library/Application Support/usdbrl-swiftbar"
+readonly CONFIG_PATH='Library/Application Support/usdbrl-swiftbar'
+readonly CONFIG_DIR="$HOME/$CONFIG_PATH"
 
-log() { printf '==> %s\n' "$*"; }
+log() {
+  printf '==> %s\n' "$*"
+}
+
 die() {
   printf 'error: %s\n' "$*" >&2
   exit 1
 }
 
 usage() {
-  sed -n '4,12s/^# \{0,1\}//p' "$0"
-  exit "${1:-0}"
+  cat <<'EOF'
+Usage:
+  install.sh [--login-item] [--interval <n>] [--plugin <file>]
+  install.sh --uninstall
+
+  --login-item     also start SwiftBar at login (macOS may ask for Automation permission)
+  --interval <n>   refresh interval (30s, 1m, 5m, 1h...); keeps the installed one, or 1m
+  --plugin <file>  install a local Go binary instead of downloading the release asset
+  --uninstall      remove the plugin and its cache and settings, keeping SwiftBar
+EOF
+}
+
+require_supported_macos() {
+  local version major
+  version=$(sw_vers -productVersion)
+  major=${version%%.*}
+  if [[ ! $major =~ ^[0-9]+$ ]] || (( 10#$major < 12 )); then
+    die "macOS 12 or later is required (found $version)"
+  fi
+}
+
+hardware_arch() {
+  if [ "$(sysctl -n hw.optional.arm64 2>/dev/null || echo 0)" = 1 ]; then
+    printf '%s\n' arm64
+  else
+    printf '%s\n' amd64
+  fi
 }
 
 ensure_swiftbar() {
@@ -58,38 +75,82 @@ verify_swiftbar() {
     die "Gatekeeper does not accept SwiftBar as a notarized app"
 }
 
-# Sets PLUGIN_DIR, keeping a directory the user already configured in SwiftBar.
-resolve_plugin_dir() {
-  PLUGIN_DIR=$(defaults read "$PREFS" PluginDirectory 2>/dev/null || true)
-  DIR_CHANGED=0
-  if [ -n "$PLUGIN_DIR" ]; then
-    log "Using the SwiftBar plugin directory already set: $PLUGIN_DIR"
-  else
-    PLUGIN_DIR=$DEFAULT_PLUGIN_DIR
-    DIR_CHANGED=1
-    log "Setting the SwiftBar plugin directory to $PLUGIN_DIR"
-    defaults write "$PREFS" PluginDirectory -string "$PLUGIN_DIR"
-  fi
-  mkdir -p "$PLUGIN_DIR" # umask 077 keeps new directories at 700
+configured_plugin_dir() {
+  defaults read "$PREFS" PluginDirectory 2>/dev/null || true
 }
 
-# fetch_plugin <dest>: copies the local plugin or downloads the release asset and checks it.
-fetch_plugin() {
-  local dest=$1 sum
-  if [ -n "$LOCAL_PLUGIN" ]; then
-    [ -f "$LOCAL_PLUGIN" ] || die "plugin file not found: $LOCAL_PLUGIN"
-    cp "$LOCAL_PLUGIN" "$dest"
+download_plugin() {
+  local dest=$1 arch=$2 expected=$3 sum
+  [ "$expected" != unreleased ] || die "this copy of install.sh is not a release; use --plugin <file>"
+  log "Downloading the plugin $VERSION for $arch"
+  curl -q -fsSL --proto '=https' --proto-redir '=https' --tlsv1.2 --max-time 60 \
+    -o "$dest" "https://github.com/$REPO/releases/download/$VERSION/usdbrl-darwin-$arch" ||
+    die "download failed"
+  sum=$(shasum -a 256 "$dest" | awk '{ print $1 }')
+  [ "$sum" = "$expected" ] || die "checksum mismatch: expected $expected, got $sum"
+  log "Checksum OK"
+}
+
+prepare_binary() {
+  local dest=$1 local_plugin=$2 arch expected cpu format version
+  arch=$(hardware_arch)
+  case $arch in
+    arm64)
+      expected=$PLUGIN_SHA256_ARM64
+      cpu=arm64
+      ;;
+    amd64)
+      expected=$PLUGIN_SHA256_AMD64
+      cpu=x86_64
+      ;;
+  esac
+
+  if [ -n "$local_plugin" ]; then
+    [ -f "$local_plugin" ] || die "plugin file not found: $local_plugin"
+    cp -- "$local_plugin" "$dest"
   else
-    [ "$PLUGIN_SHA256" != unreleased ] || die "this copy of install.sh is not a release; use --plugin <file>"
-    log "Downloading the plugin $VERSION"
-    curl -q -fsSL --proto '=https' --proto-redir '=https' --tlsv1.2 --max-time 60 \
-      -o "$dest" "https://github.com/$REPO/releases/download/$VERSION/usdbrl.1m.sh" ||
-      die "download failed"
-    sum=$(shasum -a 256 "$dest" | awk '{ print $1 }')
-    [ "$sum" = "$PLUGIN_SHA256" ] || die "checksum mismatch: expected $PLUGIN_SHA256, got $sum"
-    log "Checksum OK"
+    download_plugin "$dest" "$arch" "$expected"
   fi
-  bash -n "$dest" || die "plugin has a syntax error"
+  format=$(file -b "$dest")
+  [ "$format" = "Mach-O 64-bit executable $cpu" ] || die "expected a macOS $arch binary, got: $format"
+  chmod 700 "$dest"
+  version=$("$dest" --version) || die "could not run the plugin on this Mac"
+  if [[ $version = "$VERSION" || ( -n "$local_plugin" && $version = dev ) ]]; then
+    return
+  fi
+  die "plugin version mismatch: expected $VERSION, got $version"
+}
+
+render_wrapper() {
+  local display_version=$1
+  cat <<EOF
+#!/bin/bash
+# <xbar.title>USD/BRL</xbar.title>
+# <xbar.version>$display_version</xbar.version>
+# <xbar.desc>USD/BRL exchange rate in the menu bar, with source fallback and a local cache.</xbar.desc>
+# <xbar.author>Felipe Ascari</xbar.author>
+# <xbar.about>https://github.com/$REPO</xbar.about>
+# <swiftbar.hideRunInTerminal>true</swiftbar.hideRunInTerminal>
+# <swiftbar.hideLastUpdated>true</swiftbar.hideLastUpdated>
+
+binary="\$HOME/$CONFIG_PATH/bin/usdbrl"
+EOF
+  cat <<'EOF'
+if [ ! -x "$binary" ]; then
+  printf '%s\n' 'US$ --.-- ⚠' '---' 'USD/BRL binary missing. Run the installer again.'
+  exit 0
+fi
+export USDBRL_PLUGIN_PATH="$0"
+exec "$binary" "$@"
+EOF
+}
+
+cleanup_install() {
+  local work_dir=$1 staged_binary=$2 staged_wrapper=$3
+  [ -z "$staged_wrapper" ] || rm -f "$staged_wrapper"
+  [ -z "$staged_binary" ] || rm -f "$staged_binary"
+  rm -f "$work_dir/plugin"
+  rmdir "$work_dir"
 }
 
 add_login_item() {
@@ -99,64 +160,102 @@ add_login_item() {
 }
 
 start_swiftbar() {
-  if pgrep -xq SwiftBar; then
-    if [ "$DIR_CHANGED" = 1 ]; then
-      log "Restarting SwiftBar to load the new plugin directory"
-      pkill -x SwiftBar
-      sleep 1
-      open -a "$APP"
-    else
-      open -g 'swiftbar://refreshallplugins'
-    fi
-  else
+  local previous_dir=$1
+  if ! pgrep -xq SwiftBar; then
     log "Opening SwiftBar"
     open -a "$APP"
+    return
   fi
+  if [ -n "$previous_dir" ]; then
+    open -g 'swiftbar://refreshallplugins'
+    return
+  fi
+  log "Restarting SwiftBar to load the new plugin directory"
+  pkill -x SwiftBar
+  sleep 1
+  open -a "$APP"
 }
 
-# Sets INTERVAL to the one already installed, so an update keeps the choice made in the menu.
-keep_installed_interval() {
-  local f
-  for f in "$PLUGIN_DIR"/usdbrl.*.sh; do
-    [ -e "$f" ] || break
-    f=${f##*/usdbrl.}
-    INTERVAL=${f%.sh}
+installed_interval() {
+  local plugin_dir=$1 wrapper
+  for wrapper in "$plugin_dir"/usdbrl.*.sh; do
+    [ -e "$wrapper" ] || break
+    wrapper=${wrapper##*/usdbrl.}
+    printf '%s\n' "${wrapper%.sh}"
     return
   done
-  INTERVAL=1m
+  printf '%s\n' 1m
 }
 
-install_plugin() {
-  if [ -n "$INTERVAL" ]; then
-    [[ $INTERVAL =~ ^[0-9]+[smhd]$ ]] || die "invalid interval: $INTERVAL (examples: 30s, 1m, 5m, 1h)"
+install_plugin() (
+  local interval=$1 local_plugin=$2 login_item=$3
+  local work_dir staged_binary='' staged_wrapper=''
+  local previous_dir plugin_dir wrapper existing
+  local display_version=$VERSION build
+  if [ -n "$interval" ]; then
+    [[ $interval =~ ^[0-9]+[smhd]$ ]] || die "invalid interval: $interval (examples: 30s, 1m, 5m, 1h)"
+  fi
+  require_supported_macos
+
+  work_dir=$(mktemp -d)
+  trap 'cleanup_install "$work_dir" "$staged_binary" "$staged_wrapper"' EXIT
+  prepare_binary "$work_dir/plugin" "$local_plugin"
+  if [ -n "$local_plugin" ]; then
+    build=$(stat -f '%Sm' -t '%Y%m%d.%H%M%S' -- "$local_plugin")
+    display_version="$VERSION (build $build)"
   fi
   ensure_swiftbar
   verify_swiftbar
-  resolve_plugin_dir
-  [ -n "$INTERVAL" ] || keep_installed_interval
 
-  WORK_DIR=$(mktemp -d)
-  trap 'rm -rf "$WORK_DIR"' EXIT
-  fetch_plugin "$WORK_DIR/plugin"
-  rm -f "$PLUGIN_DIR"/usdbrl.*.sh
-  install -m 700 "$WORK_DIR/plugin" "$PLUGIN_DIR/usdbrl.$INTERVAL.sh"
-  log "Installed $PLUGIN_DIR/usdbrl.$INTERVAL.sh"
+  previous_dir=$(configured_plugin_dir)
+  plugin_dir=${previous_dir:-$DEFAULT_PLUGIN_DIR}
+  if [ -n "$previous_dir" ]; then
+    log "Using the SwiftBar plugin directory already set: $plugin_dir"
+  else
+    log "Setting the SwiftBar plugin directory to $plugin_dir"
+    defaults write "$PREFS" PluginDirectory -string "$plugin_dir"
+  fi
+  mkdir -p "$plugin_dir"
+  if [ -z "$interval" ]; then
+    interval=$(installed_interval "$plugin_dir")
+  fi
 
-  [ "$LOGIN_ITEM" = 1 ] && add_login_item
-  start_swiftbar
+  wrapper="$plugin_dir/usdbrl.$interval.sh"
+  mkdir -p "$CONFIG_DIR/bin"
+  staged_binary=$(mktemp "$CONFIG_DIR/bin/.usdbrl.XXXXXX")
+  staged_wrapper=$(mktemp "$plugin_dir/.usdbrl.XXXXXX")
+  install -m 700 "$work_dir/plugin" "$staged_binary"
+  render_wrapper "$display_version" >"$staged_wrapper"
+  bash -n "$staged_wrapper"
+  chmod 700 "$staged_wrapper"
+
+  mv -f "$staged_binary" "$CONFIG_DIR/bin/usdbrl"
+  mv -f "$staged_wrapper" "$wrapper"
+  for existing in "$plugin_dir"/usdbrl.*.sh; do
+    [ "$existing" = "$wrapper" ] || rm -f "$existing"
+  done
+  log "Installed $wrapper"
+
+  if [ "$login_item" = 1 ]; then
+    add_login_item
+  fi
+  start_swiftbar "$previous_dir"
   log "Done. The rate shows up in the menu bar within a few seconds."
-}
+)
 
 uninstall_plugin() {
   local dir
-  dir=$(defaults read "$PREFS" PluginDirectory 2>/dev/null || true)
-  if [ -n "$dir" ]; then
+  dir=$(configured_plugin_dir)
+  dir=${dir:-$DEFAULT_PLUGIN_DIR}
+  if [ -d "$dir" ]; then
     rm -f "$dir"/usdbrl.*.sh
     log "Removed the plugin from $dir"
   fi
   rm -rf "$CACHE_DIR" "$CONFIG_DIR"
   log "Removed $CACHE_DIR and $CONFIG_DIR"
-  pgrep -xq SwiftBar && open -g 'swiftbar://refreshallplugins'
+  if pgrep -xq SwiftBar; then
+    open -g 'swiftbar://refreshallplugins'
+  fi
   cat <<EOF
 ==> SwiftBar itself was kept. To remove it too:
     osascript -e 'tell application "System Events" to delete login item "SwiftBar"'
@@ -165,18 +264,34 @@ uninstall_plugin() {
 EOF
 }
 
-LOGIN_ITEM=0 INTERVAL='' LOCAL_PLUGIN='' MODE=install
-while [ $# -gt 0 ]; do
-  case $1 in
-    --login-item) LOGIN_ITEM=1 ;;
-    --interval) INTERVAL=${2:?--interval needs a value} && shift ;;
-    --plugin) LOCAL_PLUGIN=${2:?--plugin needs a file} && shift ;;
-    --uninstall) MODE=uninstall ;;
-    -h | --help) usage ;;
-    *) usage 1 >&2 ;;
-  esac
-  shift
-done
+main() {
+  export PATH=/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin:/usr/local/bin
+  local login_item=0 interval='' local_plugin='' mode=install
+  while [ $# -gt 0 ]; do
+    case $1 in
+      --login-item) login_item=1 ;;
+      --interval)
+        interval=${2:?--interval needs a value}
+        shift
+        ;;
+      --plugin)
+        local_plugin=${2:?--plugin needs a file}
+        shift
+        ;;
+      --uninstall) mode=uninstall ;;
+      -h | --help) usage; return ;;
+      *) usage >&2; return 1 ;;
+    esac
+    shift
+  done
 
-[ "$(uname -s)" = Darwin ] || die "macOS only"
-if [ "$MODE" = uninstall ]; then uninstall_plugin; else install_plugin; fi
+  [ "$(uname -s)" = Darwin ] || die "macOS only"
+  case $mode in
+    install) install_plugin "$interval" "$local_plugin" "$login_item" ;;
+    uninstall) uninstall_plugin ;;
+  esac
+}
+
+if [ "${BASH_SOURCE[0]}" = "$0" ]; then
+  main "$@"
+fi

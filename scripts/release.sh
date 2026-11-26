@@ -1,9 +1,4 @@
 #!/bin/bash
-# Publishes a release: pins the plugin version and checksum in install.sh, runs the smoke
-# test, commits, tags, pushes and creates the GitHub release with both files as assets.
-#
-# Usage: scripts/release.sh vX.Y.Z
-
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -12,25 +7,66 @@ die() {
   exit 1
 }
 
+build() (
+  local source=$1 output=$2 arch=$3
+  cd "$source"
+  GOOS=darwin GOARCH="$arch" GOARM64=v8.0 GOAMD64=v1 CGO_ENABLED=0 \
+    GOTOOLCHAIN=local GOWORK=off GOFLAGS='' go build -trimpath -buildvcs=false \
+    -ldflags "-s -w -X main.version=$version" -o "$output" ./cmd
+)
+
+checksum() {
+  shasum -a 256 "$1" | awk '{ print $1 }'
+}
+
 version=${1:-}
 [[ $version =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || die "usage: scripts/release.sh vX.Y.Z"
 [ "$(git branch --show-current)" = main ] || die "release from main"
 [ -z "$(git status --porcelain)" ] || die "working tree is not clean"
 git rev-parse -q --verify "refs/tags/$version" >/dev/null && die "tag $version already exists"
+toolchain=$(sed -n 's/^toolchain //p' go.mod)
+[ "$(go env GOVERSION)" = "$toolchain" ] || die "build with $toolchain via mise"
 
-sed -i '' -E "s|^# <xbar.version>.*</xbar.version>$|# <xbar.version>$version</xbar.version>|" usdbrl.1m.sh
-sum=$(shasum -a 256 usdbrl.1m.sh | awk '{ print $1 }')
-sed -i '' -E \
+work=$(mktemp -d)
+trap 'rm -rf "$work"' EXIT
+mkdir -p "$work/source"
+git archive HEAD | tar -xf - -C "$work/source"
+for arch in arm64 amd64; do
+  binary="$work/usdbrl-darwin-$arch"
+  build "$PWD" "$binary" "$arch"
+  build "$work/source" "$work/rebuilt-$arch" "$arch"
+  cmp -s "$binary" "$work/rebuilt-$arch" || die "clean rebuild differs for $arch"
+
+  cpu=$arch
+  [ "$arch" != amd64 ] || cpu=x86_64
+  [ "$(file -b "$binary")" = "Mach-O 64-bit executable $cpu" ] ||
+    die "unexpected binary format for $arch"
+done
+
+if [ "$(uname -m)" = arm64 ]; then
+  [ "$("$work/usdbrl-darwin-arm64" --version)" = "$version" ] || die "arm64 version mismatch"
+fi
+if arch -x86_64 /usr/bin/true 2>/dev/null; then
+  [ "$(arch -x86_64 "$work/usdbrl-darwin-amd64" --version)" = "$version" ] || die "amd64 version mismatch"
+fi
+
+arm_sum=$(checksum "$work/usdbrl-darwin-arm64")
+amd_sum=$(checksum "$work/usdbrl-darwin-amd64")
+sed -E \
   -e "s|^readonly VERSION=.*|readonly VERSION='$version'|" \
-  -e "s|^readonly PLUGIN_SHA256=.*|readonly PLUGIN_SHA256='$sum'|" install.sh
+  -e "s|^readonly PLUGIN_SHA256_ARM64=.*|readonly PLUGIN_SHA256_ARM64='$arm_sum'|" \
+  -e "s|^readonly PLUGIN_SHA256_AMD64=.*|readonly PLUGIN_SHA256_AMD64='$amd_sum'|" install.sh > "$work/install.sh"
 
-bash -n install.sh
-bash test/smoke.sh
+mise run lint
+mise run test
+bash scripts/parity.sh
+bash test/installer.sh "$work"
 
-git commit -q -am "Release $version"
+cat "$work/install.sh" > install.sh
+git commit -q -m "Release $version" -- install.sh
 git tag -a "$version" -m "$version"
 git push -q origin main "$version"
-gh release create "$version" install.sh usdbrl.1m.sh --title "$version" --notes "$(
+gh release create "$version" install.sh "$work/usdbrl-darwin-arm64" "$work/usdbrl-darwin-amd64" --title "$version" --notes "$(
   cat <<EOF
 Install or update:
 
@@ -39,6 +75,9 @@ curl -fsSLO https://github.com/fascari/swiftbar-usdbrl/releases/download/$versio
 bash install.sh
 \`\`\`
 
-Plugin SHA-256: \`$sum\`
+Plugin SHA-256:
+
+- Apple Silicon: \`$arm_sum\`
+- Intel: \`$amd_sum\`
 EOF
 )"
