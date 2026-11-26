@@ -22,14 +22,16 @@ SwiftBar plugin that shows the USD/BRL exchange rate in the macOS menu bar. A si
 
 ## Getting started
 
+Download the installer from the latest release, read it, then run it. It installs SwiftBar through Homebrew when missing, checks its signature and notarization, and downloads the plugin with a pinned SHA-256.
+
 ```bash
-brew install --cask swiftbar
-defaults write com.ameba.SwiftBar PluginDirectory -string "$HOME/Library/Application Support/SwiftBar/Plugins"
-mise run install
-open -a SwiftBar
+curl -fsSLO https://github.com/fascari/swiftbar-usdbrl/releases/latest/download/install.sh
+bash install.sh --login-item
 ```
 
-`mise run test` checks the syntax and runs the smoke test, which needs network access.
+Drop `--login-item` to skip starting SwiftBar at login. `bash install.sh --uninstall` removes the plugin and keeps SwiftBar.
+
+From a clone, `mise run install` installs the working copy and `mise run test` runs the smoke test, which needs network access.
 
 ## Docs
 

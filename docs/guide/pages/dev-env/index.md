@@ -3,71 +3,49 @@
 ## Requirements
 
 - macOS 12 or later, required by the SwiftBar cask.
-- [Homebrew](https://brew.sh/).
-- [mise](https://mise.jdx.dev/), to run the project tasks.
+- [Homebrew](https://brew.sh/), used to install SwiftBar when it's missing.
+- [mise](https://mise.jdx.dev/), only to work from a clone.
 
-## Install SwiftBar and verify it
+## Install
 
-Install SwiftBar only through the official Homebrew cask.
+Download `install.sh` from the latest release, read it, then run it.
 
 ```bash
-brew install --cask swiftbar
+curl -fsSLO https://github.com/fascari/swiftbar-usdbrl/releases/latest/download/install.sh
+bash install.sh --login-item
 ```
 
-Check the signature, notarization and Gatekeeper assessment of the installed app.
+The installer runs these steps and stops at the first failure.
+
+1. Installs SwiftBar from the official Homebrew cask when `/Applications/SwiftBar.app` is missing.
+2. Checks the code signature, requires the Ameba Labs team ID `X93LWC49WV` and requires Gatekeeper to accept the app as notarized.
+3. Keeps the plugin directory already set in SwiftBar, or sets `~/Library/Application Support/SwiftBar/Plugins` when there is none.
+4. Downloads `usdbrl.1m.sh` from the same release and compares its SHA-256 with the value pinned in `install.sh`.
+5. Installs the plugin with mode 700 and opens or refreshes SwiftBar.
+
+The installer never turns off Gatekeeper, never strips the quarantine attribute and only asks for a permission with `--login-item`.
+
+### Options
+
+| Option | Effect |
+|---|---|
+| `--login-item` | Start SwiftBar at login through System Events. macOS asks once for Automation permission. |
+| `--interval <n>` | Refresh interval, such as `30s`, `5m` or `1h`. Defaults to `1m`. |
+| `--plugin <file>` | Install a local plugin file instead of the release asset. |
+| `--uninstall` | Remove the plugin, its cache and its settings, keeping SwiftBar. |
+
+Running the installer again updates the plugin in place. The pinned checksum protects against a corrupted or altered download, but `install.sh` and the plugin come from the same release, so reading `install.sh` before running it is still the way to trust it.
+
+### Verify SwiftBar by hand
 
 ```bash
 APP=/Applications/SwiftBar.app
 codesign --verify --deep --strict --verbose=2 "$APP"
 codesign -dvv "$APP" 2>&1 | grep -E 'Authority|TeamIdentifier'
 spctl --assess --type execute --verbose=4 "$APP"
-xcrun stapler validate "$APP"
 ```
 
-Version 2.1.1 (build 597), checked on 2026-11-26, gives these results.
-
-- Signed by `Developer ID Application: Ameba Labs, LLC (X93LWC49WV)`.
-- `spctl` accepts the app with `source=Notarized Developer ID`.
-- `stapler` prints `The validate action worked!`.
-
-If any check fails, don't open the app. Don't turn off Gatekeeper and don't strip the quarantine attribute. If macOS asks for confirmation on first launch, confirm in the system dialog.
-
-## Set the plugin directory
-
-SwiftBar stores its plugin directory in the `PluginDirectory` key. Check for an existing value before writing one.
-
-```bash
-defaults read com.ameba.SwiftBar PluginDirectory
-```
-
-If the key doesn't exist, point SwiftBar to a dedicated directory.
-
-```bash
-mkdir -p -m 700 "$HOME/Library/Application Support/SwiftBar/Plugins"
-defaults write com.ameba.SwiftBar PluginDirectory -string "$HOME/Library/Application Support/SwiftBar/Plugins"
-```
-
-If another directory is already set, keep it and install there with `PLUGIN_DIR=<directory> mise run install`.
-
-## Install the plugin
-
-```bash
-mise trust
-mise run install
-open -a SwiftBar
-```
-
-`mise run install` checks the syntax and copies the script with mode 700. SwiftBar picks it up on its own and runs it every minute.
-
-## Start at login
-
-Register SwiftBar as a login item through System Events. macOS asks once for Automation permission so the terminal can control System Events.
-
-```bash
-osascript -e 'tell application "System Events" to make login item at end with properties {path:"/Applications/SwiftBar.app", hidden:false}'
-```
-
-Confirm it in System Settings, General, Login Items. Turning on the launch-at-login option in the SwiftBar preferences works too and needs no extra permission. Use one of the two, not both.
+Version 2.1.1 (build 597), checked on 2026-11-26, is signed by `Developer ID Application: Ameba Labs, LLC (X93LWC49WV)` and `spctl` reports `source=Notarized Developer ID`.
 
 ## Language
 
@@ -75,45 +53,42 @@ The menu is in English by default. Pick Language, then Português, in the plugin
 
 ## Change the refresh interval
 
-SwiftBar reads the interval from the installed file name, with the units `s`, `m`, `h` and `d`. To refresh every 5 minutes, reinstall with another interval and delete the old file.
-
 ```bash
-INTERVAL=5m mise run install
-rm "$HOME/Library/Application Support/SwiftBar/Plugins/usdbrl.1m.sh"
+bash install.sh --interval 5m
 ```
 
-Intervals under 1 minute add load on the sources without much gain. See [How the plugin works](../how-it-works/index.md) for how fresh each source is.
+The installer replaces the previous `usdbrl.*.sh` file, because SwiftBar reads the interval from the file name. Intervals under 1 minute add load on the sources without much gain. See [How the plugin works](../how-it-works/index.md) for how fresh each source is.
 
-## Test
+## Work from a clone
 
 ```bash
+mise trust
 mise run test
+mise run install
 ```
 
-The smoke test uses temporary cache and config directories and the network. It never touches the real files.
+`mise run install` passes extra flags to `install.sh`, for example `mise run install -- --interval 5m`. The smoke test uses temporary cache and config directories and the network, and never touches the real files.
+
+## Release
+
+```bash
+mise run release v1.0.0
+```
+
+The release task pins the plugin version and SHA-256 in `install.sh`, runs the smoke test, commits, tags, pushes and creates the GitHub release with `install.sh` and `usdbrl.1m.sh` as assets.
 
 ## Uninstall
 
-1. Remove the login item, or turn off the option in the SwiftBar preferences if that's the one in use.
+```bash
+bash install.sh --uninstall
+```
+
+This removes the plugin, `~/Library/Caches/usdbrl-swiftbar` and `~/Library/Application Support/usdbrl-swiftbar`. To remove SwiftBar too, quit it from its menu and run the commands the uninstaller prints.
 
 ```bash
 osascript -e 'tell application "System Events" to delete login item "SwiftBar"'
-```
-
-2. Quit SwiftBar from its menu.
-3. Remove the app and its data.
-
-```bash
 defaults delete com.ameba.SwiftBar
 brew uninstall --zap --cask swiftbar
-```
-
-4. Remove the plugin files. If the `SwiftBar` directory holds other plugins, delete only `usdbrl.*.sh`.
-
-```bash
-rm -rf "$HOME/Library/Application Support/SwiftBar" \
-  "$HOME/Library/Application Support/usdbrl-swiftbar" \
-  "$HOME/Library/Caches/usdbrl-swiftbar"
 ```
 
 `--zap` removes `~/Library/Caches/com.ameba.SwiftBar`, `~/Library/Preferences/com.ameba.SwiftBar.plist` and the login helper folders.
