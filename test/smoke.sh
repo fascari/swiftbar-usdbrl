@@ -40,6 +40,13 @@ bar_matches() {
 }
 out_has() { printf '%s\n' "$OUT" | grep -qF -- "$1"; }
 out_lacks() { ! out_has "$1"; }
+# lines_are <text>...: every argument must appear as a whole menu line.
+lines_are() {
+  local want
+  for want in "$@"; do
+    printf '%s\n' "$OUT" | grep -qxF -- "$want" || return 1
+  done
+}
 mode_is() { [ "$(stat -f %Lp "$1")" = "$2" ]; }
 rc_is_zero() { [ "$RC" -eq 0 ]; }
 
@@ -61,6 +68,7 @@ check 'no fallback warning' out_lacks 'using AwesomeAPI'
 check 'menu shows day high and low' out_has 'Day low: R$ '
 check 'menu has the refresh item' out_has 'Refresh now | refresh=true'
 check 'menu has the language selector' out_has '--Português | bash='
+check 'submenu titles are whole lines' lines_are 'Alerts' 'Refresh interval' 'Language'
 check 'cache directory is mode 700' mode_is "$TMP/live" 700
 check 'cache file is mode 600' mode_is "$TMP/live/last.tsv" 600
 
@@ -91,6 +99,7 @@ done
 echo '# no source responds, no valid quote'
 run "$TMP/none" "$DOWN" "$DOWN"
 check 'no cache: shows US$ --.-- and makes up no value' bar_matches '^US\$ --\.-- ⚠$'
+check 'no cache: menu explains why' out_has '⚠ No quote available: no source responded'
 mkdir -p -m 700 "$TMP/bad" && printf 'yahoo\tjunk\t1\t2\t3\t4\n' >"$TMP/bad/last.tsv"
 run "$TMP/bad" "$DOWN" "$DOWN"
 check 'corrupted cache: shows US$ --.--' bar_matches '^US\$ --\.-- ⚠$'
@@ -113,12 +122,59 @@ forge_cache "$TMP/pt" 5.90 -1.5 "$((NOW - 30))"
 run "$TMP/pt" "$DOWN" "$DOWN"
 check 'pt-BR uses a decimal comma' bar_matches '^US\$ 5,90 ▼ 1,50% ⚠$'
 check 'pt-BR menu labels' out_has 'Cotação atual: R$ 5,90'
+check 'pt-BR submenu titles are whole lines' lines_are 'Alertas' 'Intervalo de atualização' 'Idioma'
+run "$TMP/none" "$DOWN" "$DOWN"
+check 'pt-BR no cache: menu explains why' out_has '⚠ Sem cotação disponível: nenhuma fonte respondeu'
 check 'pt-BR is checked in the selector' out_has 'param2=pt terminal=false refresh=true checked=true'
 "$PLUGIN" --set-lang xx
 check 'unknown language is ignored' [ "$(cat "$USDBRL_CONFIG_DIR/lang")" = pt ]
 "$PLUGIN" --set-lang en
 run "$TMP/pt" "$DOWN" "$DOWN"
 check 'back to English' out_has 'Current rate: R$ 5.90'
+
+echo '# alerts'
+export USDBRL_NOTIFY_LOG="$TMP/notify.log"
+forge_cache "$TMP/alert" 5.70 -1.0 "$NOW"
+alert() { USDBRL_CACHE_DIR="$TMP/alert" "$PLUGIN" "$@"; }
+alert --add-alert 5,80
+alert --add-alert 'R$ 5.60'
+alert --add-alert 5.8
+alert --add-alert abc
+alert --add-alert -1
+check 'targets above and below the rate get their direction' [ "$(cat "$USDBRL_CONFIG_DIR/alerts")" = $'above 5.8\nbelow 5.6' ]
+check 'alerts file is mode 600' mode_is "$USDBRL_CONFIG_DIR/alerts" 600
+run "$TMP/alert" "$DOWN" "$DOWN"
+check 'menu lists the alerts' out_has '--≥ R$ 5.80 | bash='
+check 'a cached rate never fires an alert' [ ! -e "$USDBRL_NOTIFY_LOG" ]
+printf 'below 99\nabove 99\n' >"$USDBRL_CONFIG_DIR/alerts"
+run "$TMP/live" "$YAHOO" "$AWESOME"
+check 'a fresh rate fires the alert it reached' grep -q 'reached R$ 99.00' "$USDBRL_NOTIFY_LOG"
+check 'the current rate is shown when it differs from the target' grep -qE 'reached R\$ 99\.00 \(now R\$ [0-9]+\.[0-9]{2}\)$' "$USDBRL_NOTIFY_LOG"
+rate=$(cut -f2 "$TMP/live/last.tsv")
+printf 'below %s\n' "$rate" >"$USDBRL_CONFIG_DIR/alerts"
+: >"$USDBRL_NOTIFY_LOG"
+forge_cache "$TMP/exact" "$rate" -1.0 "$((NOW + 60))"
+run "$TMP/exact" "$YAHOO" "$AWESOME"
+check 'no "(now ...)" when the rate equals the target' grep -qE '^USD/BRL reached R\$ [0-9]+\.[0-9]{2}$' "$USDBRL_NOTIFY_LOG"
+printf 'above 99\n' >"$USDBRL_CONFIG_DIR/alerts"
+check 'the fired alert is removed and the other kept' [ "$(cat "$USDBRL_CONFIG_DIR/alerts")" = 'above 99' ]
+alert --remove-alert above 99
+check 'removing the last alert deletes the file' [ ! -e "$USDBRL_CONFIG_DIR/alerts" ]
+unset USDBRL_NOTIFY_LOG
+
+echo '# refresh interval selector'
+mkdir -p "$TMP/plugins"
+cp "$PLUGIN" "$TMP/plugins/usdbrl.1m.sh"
+SWIFTBAR_PLUGIN_PATH="$TMP/plugins/usdbrl.1m.sh" run "$TMP/live" "$DOWN" "$DOWN"
+check 'current interval is checked' out_has 'param2=1m terminal=false checked=true'
+check 'menu offers 30 min' out_has '--30 min | bash='
+SWIFTBAR_PLUGIN_PATH="$TMP/plugins/usdbrl.1m.sh" "$PLUGIN" --set-interval 5m
+check 'choosing 5 min renames the plugin file' [ -f "$TMP/plugins/usdbrl.5m.sh" ] && [ ! -e "$TMP/plugins/usdbrl.1m.sh" ]
+SWIFTBAR_PLUGIN_PATH="$TMP/plugins/usdbrl.5m.sh" "$PLUGIN" --set-interval 7m
+check 'an interval outside the presets is ignored' [ -f "$TMP/plugins/usdbrl.5m.sh" ]
+cp "$PLUGIN" "$TMP/plugins/other.sh"
+SWIFTBAR_PLUGIN_PATH="$TMP/plugins/other.sh" "$PLUGIN" --set-interval 1m
+check 'only usdbrl.*.sh files are renamed' [ -f "$TMP/plugins/other.sh" ]
 
 echo
 if [ "$fails" -eq 0 ]; then echo 'all tests passed'; else echo "$fails failure(s)"; fi

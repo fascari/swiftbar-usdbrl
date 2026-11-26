@@ -2,11 +2,11 @@
 # Installer for the swiftbar-usdbrl plugin.
 #
 # Usage:
-#   install.sh [--login-item] [--interval 1m] [--plugin <file>]
+#   install.sh [--login-item] [--interval <n>] [--plugin <file>]
 #   install.sh --uninstall
 #
 #   --login-item     also start SwiftBar at login (macOS asks once for Automation permission)
-#   --interval <n>   refresh interval read by SwiftBar from the file name: 30s, 1m, 5m, 1h...
+#   --interval <n>   refresh interval (30s, 1m, 5m, 1h...); keeps the installed one, or 1m
 #   --plugin <file>  install a local plugin file instead of downloading the release asset
 #   --uninstall      remove the plugin and its cache and settings, keeping SwiftBar
 
@@ -114,11 +114,26 @@ start_swiftbar() {
   fi
 }
 
+# Sets INTERVAL to the one already installed, so an update keeps the choice made in the menu.
+keep_installed_interval() {
+  local f
+  for f in "$PLUGIN_DIR"/usdbrl.*.sh; do
+    [ -e "$f" ] || break
+    f=${f##*/usdbrl.}
+    INTERVAL=${f%.sh}
+    return
+  done
+  INTERVAL=1m
+}
+
 install_plugin() {
-  [[ $INTERVAL =~ ^[0-9]+[smhd]$ ]] || die "invalid interval: $INTERVAL (examples: 30s, 1m, 5m, 1h)"
+  if [ -n "$INTERVAL" ]; then
+    [[ $INTERVAL =~ ^[0-9]+[smhd]$ ]] || die "invalid interval: $INTERVAL (examples: 30s, 1m, 5m, 1h)"
+  fi
   ensure_swiftbar
   verify_swiftbar
   resolve_plugin_dir
+  [ -n "$INTERVAL" ] || keep_installed_interval
 
   WORK_DIR=$(mktemp -d)
   trap 'rm -rf "$WORK_DIR"' EXIT
@@ -150,7 +165,7 @@ uninstall_plugin() {
 EOF
 }
 
-LOGIN_ITEM=0 INTERVAL=1m LOCAL_PLUGIN='' MODE=install
+LOGIN_ITEM=0 INTERVAL='' LOCAL_PLUGIN='' MODE=install
 while [ $# -gt 0 ]; do
   case $1 in
     --login-item) LOGIN_ITEM=1 ;;

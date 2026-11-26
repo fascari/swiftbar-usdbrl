@@ -12,7 +12,8 @@
 #   1. Yahoo Finance chart endpoint (undocumented, a few seconds behind the market).
 #   2. AwesomeAPI (documented, CDN-cached, publishes a new quote about every 5 min).
 #   3. Local cache with the last valid quote.
-# Usage: usdbrl.1m.sh [--set-lang en|pt]
+# Usage: usdbrl.1m.sh [--set-lang en|pt] [--set-interval 30s|1m|5m|15m|30m]
+#        usdbrl.1m.sh [--add-alert [rate]] [--remove-alert above|below <rate>] [--clear-alerts]
 # Test overrides: USDBRL_YAHOO_URL, USDBRL_AWESOME_URL (https only), USDBRL_CACHE_DIR,
 # USDBRL_CONFIG_DIR.
 
@@ -28,8 +29,11 @@ readonly CONFIG_DIR="${USDBRL_CONFIG_DIR:-$HOME/Library/Application Support/usdb
 readonly CACHE_FILE="$CACHE_DIR/last.tsv"
 readonly YAHOO_PAUSE="$CACHE_DIR/yahoo.paused"
 readonly LANG_FILE="$CONFIG_DIR/lang"
+readonly ALERTS_FILE="$CONFIG_DIR/alerts" # one "above <rate>" or "below <rate>" per line
+readonly MAX_ALERTS=10
 readonly STALE_AFTER=900 # seconds without a new source quote before flagging it as stale
 readonly PAUSE_FOR=300   # seconds to skip Yahoo after it fails
+readonly INTERVALS='30s 1m 5m 15m 30m'
 
 readonly UP='#1a7f37,#3fb950' DOWN='#cf222e,#ff7b72' WARN='#bc4c00,#ffa657'
 
@@ -40,7 +44,10 @@ load_strings() {
     L_CURRENT='Cotação atual' L_CHANGE='Variação no dia' L_HIGH='Máxima do dia' L_LOW='Mínima do dia'
     L_UPDATED='Atualizado na fonte' L_CHECKED='Consultado às' L_STALE='Cotação desatualizada'
     L_LAST_OK='Última consulta bem-sucedida' L_SOURCE='Fonte' L_REFRESH='Atualizar agora'
-    L_LANG='Idioma' L_NO_QUOTE='Sem cotação disponível' L_NO_CACHE='Nenhuma cotação válida em cache.'
+    L_ALERTS='Alertas' L_ADD_ALERT='Adicionar alerta…' L_CLEAR_ALERTS='Remover todos'
+    L_ALERT_HINT='Clique num alerta para removê-lo' L_ALERT_PROMPT='Avisar quando o USD/BRL chegar a (R$):'
+    L_ALERT_HIT='USD/BRL chegou a R$ %s' L_ALERT_NOW=' (agora R$ %s)' L_ALERT_NO_RATE='Sem cotação para comparar ainda.'
+    L_INTERVAL='Intervalo de atualização' L_LANG='Idioma' L_NO_QUOTE='Sem cotação disponível' L_NO_CACHE='Nenhuma cotação válida em cache.'
     L_SILENT='última cotação da fonte %s (possível mercado fechado)'
     L_YAHOO_PAUSED='Yahoo Finance em pausa após falha recente (%s), usando AwesomeAPI'
     L_YAHOO_DOWN='Yahoo Finance indisponível (%s), usando AwesomeAPI'
@@ -54,7 +61,10 @@ load_strings() {
     L_CURRENT='Current rate' L_CHANGE='Daily change' L_HIGH='Day high' L_LOW='Day low'
     L_UPDATED='Source updated' L_CHECKED='Checked at' L_STALE='Stale quote'
     L_LAST_OK='Last successful check' L_SOURCE='Source' L_REFRESH='Refresh now'
-    L_LANG='Language' L_NO_QUOTE='No quote available' L_NO_CACHE='No valid quote in cache.'
+    L_ALERTS='Alerts' L_ADD_ALERT='Add alert…' L_CLEAR_ALERTS='Clear all'
+    L_ALERT_HINT='Click an alert to remove it' L_ALERT_PROMPT='Notify me when USD/BRL reaches (R$):'
+    L_ALERT_HIT='USD/BRL reached R$ %s' L_ALERT_NOW=' (now R$ %s)' L_ALERT_NO_RATE='No rate to compare with yet.'
+    L_INTERVAL='Refresh interval' L_LANG='Language' L_NO_QUOTE='No quote available' L_NO_CACHE='No valid quote in cache.'
     L_SILENT='last source quote %s (market may be closed)'
     L_YAHOO_PAUSED='Yahoo Finance paused after a recent failure (%s), using AwesomeAPI'
     L_YAHOO_DOWN='Yahoo Finance unavailable (%s), using AwesomeAPI'
@@ -184,11 +194,129 @@ ago() {
 
 stamp() { date -r "$1" "+$DATE_FMT"; }
 
+plugin_path() { printf '%s' "${SWIFTBAR_PLUGIN_PATH:-$0}"; }
+
+# current_interval: reads the interval from the plugin file name (usdbrl.<interval>.sh).
+current_interval() {
+  local name
+  name=$(basename "$(plugin_path)")
+  name=${name#usdbrl.}
+  printf '%s' "${name%.sh}"
+}
+
+# set_interval <interval>: renames the plugin file; SwiftBar reloads it with the new interval.
+set_interval() {
+  local self dir
+  case " $INTERVALS " in *" $1 "*) ;; *) return ;; esac
+  self=$(plugin_path)
+  dir=$(dirname "$self")
+  case $(basename "$self") in usdbrl.*.sh) ;; *) return ;; esac
+  [ "$self" = "$dir/usdbrl.$1.sh" ] || mv -f "$self" "$dir/usdbrl.$1.sh"
+}
+
+# read_alerts: prints the valid alert lines, ignoring anything malformed.
+read_alerts() {
+  local dir val
+  [ -r "$ALERTS_FILE" ] || return 0
+  while read -r dir val; do
+    case $dir in above | below) is_dec "$val" && printf '%s %s\n' "$dir" "$val" ;; esac
+  done <"$ALERTS_FILE"
+}
+
+save_alerts() { # save_alerts <lines>
+  if [ -n "$1" ]; then write_file "$CONFIG_DIR" "$ALERTS_FILE" "$1"; else rm -f "$ALERTS_FILE"; fi
+}
+
+notify() { # notify <message>
+  if [ -n "${USDBRL_NOTIFY_LOG:-}" ]; then
+    printf '%s\n' "$1" >>"$USDBRL_NOTIFY_LOG"
+    return
+  fi
+  # The message is passed as an argument, never spliced into the AppleScript source.
+  osascript -e 'on run argv' -e 'display notification (item 1 of argv) with title "USD/BRL" sound name "Glass"' \
+    -e 'end run' "$1" >/dev/null 2>&1
+}
+
+# add_alert [rate]: asks for a target when none is given; the direction comes from the
+# cached rate, so the alert fires when the rate crosses the target from where it is now.
+add_alert() {
+  local target=${1:-} line dir alerts
+  line=$(cat "$CACHE_FILE" 2>/dev/null) && load_line "$line" || {
+    notify "$L_ALERT_NO_RATE"
+    return
+  }
+  if [ -z "$target" ]; then
+    target=$(osascript -e 'on run argv' \
+      -e 'text returned of (display dialog (item 1 of argv) default answer (item 2 of argv) with title "USD/BRL")' \
+      -e 'end run' "$L_ALERT_PROMPT" "$(num "$Q_PRICE")" 2>/dev/null) || return
+  fi
+  target=${target//,/.}
+  target=${target//[[:space:]]/}
+  target=${target#R\$}
+  is_dec "$target" && awk -v t="$target" 'BEGIN { exit !(t > 0) }' || return
+  target=$(awk -v t="$target" 'BEGIN { s = sprintf("%.4f", t); sub(/0+$/, "", s); sub(/\.$/, "", s); print s }')
+  if awk -v t="$target" -v p="$Q_PRICE" 'BEGIN { exit !(t >= p) }'; then dir=above; else dir=below; fi
+  alerts=$(read_alerts)
+  printf '%s\n' "$alerts" | grep -qxF "$dir $target" && return
+  [ "$(printf '%s' "$alerts" | grep -c .)" -lt "$MAX_ALERTS" ] || return
+  save_alerts "$(printf '%s\n%s %s' "$alerts" "$dir" "$target" | grep .)"
+}
+
+remove_alert() { # remove_alert <above|below> <rate>
+  save_alerts "$(read_alerts | grep -vxF "$1 $2")"
+}
+
+# check_alerts: fires and drops the alerts the current rate has reached.
+check_alerts() {
+  local dir val keep='' fired=0 msg
+  while read -r dir val; do
+    [ -n "$dir" ] || continue
+    if { [ "$dir" = above ] && awk -v p="$Q_PRICE" -v t="$val" 'BEGIN { exit !(p >= t) }'; } ||
+      { [ "$dir" = below ] && awk -v p="$Q_PRICE" -v t="$val" 'BEGIN { exit !(p <= t) }'; }; then
+      printf -v msg "$L_ALERT_HIT" "$(num "$val")"
+      # The current rate only adds information when it jumped past the target.
+      [ "$(num "$val")" = "$(num "$Q_PRICE")" ] || printf -v msg "%s$L_ALERT_NOW" "$msg" "$(num "$Q_PRICE")"
+      notify "$msg"
+      fired=1
+    else
+      keep="$keep$dir $val"$'\n'
+    fi
+  done <<<"$(read_alerts)"
+  [ "$fired" = 0 ] || save_alerts "${keep%$'\n'}"
+}
+
+render_alerts() { # render_alerts <plugin path>
+  local self=$1 dir val alerts sign
+  alerts=$(read_alerts)
+  printf '%s\n' "$L_ALERTS"
+  while read -r dir val; do
+    [ -n "$dir" ] || continue
+    [ "$dir" = above ] && sign='≥' || sign='≤'
+    printf -- '--%s R$ %s | bash="%s" param1=--remove-alert param2=%s param3=%s terminal=false refresh=true\n' \
+      "$sign" "$(num "$val")" "$self" "$dir" "$val"
+  done <<<"$alerts"
+  printf -- '--%s | bash="%s" param1=--add-alert terminal=false refresh=true\n' "$L_ADD_ALERT" "$self"
+  if [ -n "$alerts" ]; then
+    printf -- '--%s | bash="%s" param1=--clear-alerts terminal=false refresh=true\n' "$L_CLEAR_ALERTS" "$self"
+    printf -- '--%s | size=11\n' "$L_ALERT_HINT"
+  fi
+}
+
 render_footer() {
-  local self=${SWIFTBAR_PLUGIN_PATH:-$0} en='' pt=''
+  local self en='' pt='' cur n checked
+  self=$(plugin_path)
+  cur=$(current_interval)
   [ "$UI_LANG" = pt ] && pt=' checked=true' || en=' checked=true'
   echo '---'
   printf '%s | refresh=true\n' "$L_REFRESH"
+  render_alerts "$self"
+  printf '%s\n' "$L_INTERVAL"
+  for n in $INTERVALS; do
+    checked=''
+    [ "$n" = "$cur" ] && checked=' checked=true'
+    printf -- '--%s %s | bash="%s" param1=--set-interval param2=%s terminal=false%s\n' \
+      "${n%[sm]}" "$([ "${n: -1}" = s ] && echo s || echo min)" "$self" "$n" "$checked"
+  done
   printf '%s\n' "$L_LANG"
   printf -- '--English | bash="%s" param1=--set-lang param2=en terminal=false refresh=true%s\n' "$self" "$en"
   printf -- '--Português | bash="%s" param1=--set-lang param2=pt terminal=false refresh=true%s\n' "$self" "$pt"
@@ -242,6 +370,10 @@ render_empty() {
 }
 
 main() {
+  if [ "${1:-}" = --set-interval ]; then
+    set_interval "${2:-}"
+    return
+  fi
   if [ "${1:-}" = --set-lang ]; then
     case ${2:-} in en | pt) write_file "$CONFIG_DIR" "$LANG_FILE" "$2" ;; esac
     return
@@ -250,6 +382,15 @@ main() {
   UI_LANG=en
   [ -r "$LANG_FILE" ] && [ "$(<"$LANG_FILE")" = pt ] && UI_LANG=pt
   load_strings "$UI_LANG"
+
+  if [ $# -gt 0 ]; then
+    case $1 in
+      --add-alert) add_alert "${2:-}" ;;
+      --remove-alert) remove_alert "${2:-}" "${3:-}" ;;
+      --clear-alerts) save_alerts '' ;;
+    esac
+    return 0
+  fi
 
   local cached="" cache_mtime=0 now err="" primary_warn="" use="" new_ts LINE="" ERR=""
   now=$(date +%s)
@@ -293,6 +434,8 @@ main() {
 
   [ -z "$use" ] && use=$cached
   if [ -n "$use" ] && load_line "$use"; then
+    # Alerts only fire on a rate a source just returned, never on a cached one after a failure.
+    [ -z "$err" ] && check_alerts
     render_quote "$err" "$cache_mtime" "$primary_warn"
   else
     render_empty "${err:-$E_CACHE}"
