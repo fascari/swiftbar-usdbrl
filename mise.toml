@@ -1,0 +1,17 @@
+[tasks.check]
+description = "Check shell syntax"
+run = ["bash -n usdbrl.1m.sh", "bash -n test/smoke.sh"]
+
+[tasks.test]
+description = "Run the smoke test (needs network)"
+depends = ["check"]
+run = "bash test/smoke.sh"
+
+[tasks.install]
+description = "Install the plugin into the SwiftBar plugin directory (INTERVAL=1m by default)"
+depends = ["check"]
+run = '''
+plugin_dir="${PLUGIN_DIR:-$HOME/Library/Application Support/SwiftBar/Plugins}"
+mkdir -p -m 700 "$plugin_dir"
+install -m 700 usdbrl.1m.sh "$plugin_dir/usdbrl.${INTERVAL:-1m}.sh"
+'''
