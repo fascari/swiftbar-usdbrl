@@ -15,8 +15,8 @@ umask 077
 export PATH=/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin:/usr/local/bin
 
 # Pinned by scripts/release.sh for each release.
-readonly VERSION='v1.0.0'
-readonly PLUGIN_SHA256='b46efd9e467ed67b9b4e00aaef09ee4cff55e51610cb60fde7a11c59f108eb2c'
+readonly VERSION='v1.1.0'
+readonly PLUGIN_SHA256='d370d7522c08981a9d411047961f2532cef5ece610c733b61c8991fd80ed9160'
 
 readonly REPO='fascari/swiftbar-usdbrl'
 readonly APP='/Applications/SwiftBar.app'
