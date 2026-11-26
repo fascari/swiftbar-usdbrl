@@ -8,7 +8,7 @@ readonly PLUGIN_SHA256_AMD64='34e4509859b588bea87d5f75f3eebbb86b3f6dc01c11ab2dd6
 
 readonly REPO='fascari/swiftbar-usdbrl'
 readonly APP='/Applications/SwiftBar.app'
-readonly SWIFTBAR_TEAM_ID='X93LWC49WV' # Ameba Labs, LLC
+readonly SWIFTBAR_TEAM_ID='X93LWC49WV'
 readonly PREFS='com.ameba.SwiftBar'
 readonly DEFAULT_PLUGIN_DIR="$HOME/Library/Application Support/SwiftBar/Plugins"
 readonly CACHE_DIR="$HOME/Library/Caches/usdbrl-swiftbar"
@@ -187,6 +187,34 @@ installed_interval() {
   printf '%s\n' 1m
 }
 
+replace_plugin() {
+  local staged_binary=$1 staged_wrapper=$2 wrapper=$3
+  local binary="$CONFIG_DIR/bin/usdbrl" backup="$1.previous"
+  [ ! -d "$binary" ] || die "binary path is a directory: $binary"
+  [ ! -d "$wrapper" ] || die "wrapper path is a directory: $wrapper"
+  if [ -e "$binary" ] || [ -L "$binary" ]; then
+    ln -P -- "$binary" "$backup" || die "could not back up the previous binary"
+  fi
+
+  if ! mv -f "$staged_binary" "$binary"; then
+    rm -f "$backup"
+    die "could not install plugin binary: $binary"
+  fi
+  if mv -f "$staged_wrapper" "$wrapper"; then
+    rm -f "$backup"
+    return
+  fi
+
+  if [ -e "$backup" ] || [ -L "$backup" ]; then
+    mv -f "$backup" "$binary" ||
+      die "could not install plugin wrapper or restore the binary; previous binary is at $backup"
+  else
+    rm -f "$binary" ||
+      die "could not install plugin wrapper or remove the new binary at $binary"
+  fi
+  die "could not install plugin wrapper: $wrapper"
+}
+
 install_plugin() (
   local interval=$1 local_plugin=$2 login_item=$3
   local work_dir staged_binary='' staged_wrapper=''
@@ -229,8 +257,7 @@ install_plugin() (
   bash -n "$staged_wrapper"
   chmod 700 "$staged_wrapper"
 
-  mv -f "$staged_binary" "$CONFIG_DIR/bin/usdbrl"
-  mv -f "$staged_wrapper" "$wrapper"
+  replace_plugin "$staged_binary" "$staged_wrapper" "$wrapper"
   for existing in "$plugin_dir"/usdbrl.*.sh; do
     [ "$existing" = "$wrapper" ] || rm -f "$existing"
   done

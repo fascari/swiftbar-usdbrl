@@ -7,7 +7,6 @@ installer="$assets/install.sh"
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 
-# The sourced installer calls the overrides below.
 # shellcheck disable=SC2317
 run_installer() (
   # shellcheck source=/dev/null
@@ -28,6 +27,12 @@ run_installer() (
   }
   pgrep() { return 1; }
   sw_vers() { printf '%s\n' "${os_version:-12.0}"; }
+  mv() {
+    if [ "${fail_wrapper:-0}" = 1 ] && [[ ${3:-} == "$plugins"/usdbrl.*.sh ]]; then
+      return 1
+    fi
+    command mv "$@"
+  }
   sysctl() {
     if [ "$target" = arm64 ]; then
       printf '1\n'
@@ -64,7 +69,7 @@ reject_install() {
 }
 
 verify_arch() {
-  local target=$1 plugins config cache wrapper old expected_version build
+  local target=$1 plugins config cache wrapper old expected_version build previous_binary
   local HOME="$work/$target/home"
   export HOME
   plugins="$HOME/SwiftBar Plugins"
@@ -74,6 +79,10 @@ verify_arch() {
   expected_version=$("$assets/usdbrl-darwin-$target" --version)
 
   mkdir -p "$plugins" "$config" "$cache"
+  fail_wrapper=1 reject_install 'could not install plugin wrapper'
+  [ ! -e "$config/bin/usdbrl" ]
+  [ ! -e "$plugins/usdbrl.1m.sh" ]
+
   old='#!/bin/bash'
   printf '%s\n' "$old" >"$wrapper"
   printf 'en\n' >"$config/lang"
@@ -84,6 +93,16 @@ verify_arch() {
   corrupt=1 reject_install 'checksum mismatch'
   [ "$(cat "$wrapper")" = "$old" ]
   [ ! -e "$config/bin/usdbrl" ]
+
+  previous_binary="$config/bin/usdbrl"
+  mkdir -p "$config/bin"
+  printf '%s\n' 'previous binary' >"$previous_binary"
+  chmod 700 "$previous_binary"
+  fail_wrapper=1 reject_install 'could not install plugin wrapper'
+  [ "$(cat "$previous_binary")" = 'previous binary' ]
+  [ "$(stat -f %Lp "$previous_binary")" = 700 ]
+  [ "$(cat "$wrapper")" = "$old" ]
+
   run_installer
   cmp "$config/bin/usdbrl" "$assets/usdbrl-darwin-$target"
   [ "$(stat -f %Lp "$wrapper")" = 700 ]
