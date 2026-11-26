@@ -1,6 +1,6 @@
 [tasks.check]
 description = "Check shell syntax"
-run = ["bash -n usdbrl.1m.sh", "bash -n test/smoke.sh"]
+run = ["bash -n usdbrl.1m.sh", "bash -n install.sh", "bash -n test/smoke.sh", "bash -n scripts/release.sh"]
 
 [tasks.test]
 description = "Run the smoke test (needs network)"
@@ -8,10 +8,14 @@ depends = ["check"]
 run = "bash test/smoke.sh"
 
 [tasks.install]
-description = "Install the plugin into the SwiftBar plugin directory (INTERVAL=1m by default)"
+description = "Install SwiftBar if needed and this working copy of the plugin (extra flags go to install.sh)"
 depends = ["check"]
-run = '''
-plugin_dir="${PLUGIN_DIR:-$HOME/Library/Application Support/SwiftBar/Plugins}"
-mkdir -p -m 700 "$plugin_dir"
-install -m 700 usdbrl.1m.sh "$plugin_dir/usdbrl.${INTERVAL:-1m}.sh"
-'''
+run = "bash install.sh --plugin usdbrl.1m.sh"
+
+[tasks.uninstall]
+description = "Remove the plugin, its cache and settings (keeps SwiftBar)"
+run = "bash install.sh --uninstall"
+
+[tasks.release]
+description = "Pin the checksum, tag and publish a GitHub release (mise run release vX.Y.Z)"
+run = "bash scripts/release.sh"
