@@ -9,6 +9,8 @@ SwiftBar plugin that shows the USD/BRL exchange rate in the macOS menu bar. A si
 - Menu with the current rate, daily change, day high, day low, source timestamp, last check time and source link.
 - Quotes a few seconds behind the market through Yahoo Finance, with AwesomeAPI as a documented fallback.
 - Last valid quote cached locally and shown with a stale warning when every source fails.
+- Rate alerts: set a target such as 5.80 and get a macOS notification once the rate reaches it.
+- Refresh interval submenu with 30 s, 1, 5, 15 and 30 min presets.
 - English by default, with a Language submenu to switch the menu to Brazilian Portuguese.
 - HTTPS only, 4 s connect timeout and 8 s total per request. Requests carry no data about the computer.
 

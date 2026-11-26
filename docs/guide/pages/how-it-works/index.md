@@ -67,6 +67,12 @@ The quote is stored as one tab-separated line in `~/Library/Caches/usdbrl-swiftb
 
 Invalid responses include the HTTP status in the reason. The script always ends with `exit 0`, so SwiftBar never swaps the menu for a generic error.
 
+## Alerts
+
+Each alert is one `above <rate>` or `below <rate>` line in `~/Library/Application Support/usdbrl-swiftbar/alerts`, with mode 600. The direction comes from the cached rate when the alert is added. Alerts are checked only when a source has just returned a rate, so a cached rate shown after a failure never fires one. A fired alert sends one notification and is removed.
+
+The target typed in the dialog and the notification text reach AppleScript as `on run` arguments, never spliced into the script source, and the target must be a positive decimal number.
+
 ## Privacy
 
 Requests carry the URL, an `Accept` header and the user agent `usdbrl-swiftbar/1.0`. No cookies, credentials or computer identifiers are sent beyond the IP address that any connection exposes.

@@ -30,7 +30,7 @@ The installer never turns off Gatekeeper, never strips the quarantine attribute 
 | Option | Effect |
 |---|---|
 | `--login-item` | Start SwiftBar at login through System Events. macOS asks once for Automation permission. |
-| `--interval <n>` | Refresh interval, such as `30s`, `5m` or `1h`. Defaults to `1m`. |
+| `--interval <n>` | Refresh interval, such as `30s`, `5m` or `1h`. Defaults to the installed one, or `1m`. |
 | `--plugin <file>` | Install a local plugin file instead of the release asset. |
 | `--uninstall` | Remove the plugin, its cache and its settings, keeping SwiftBar. |
 
@@ -51,13 +51,32 @@ Version 2.1.1 (build 597), checked on 2026-11-26, is signed by `Developer ID App
 
 The menu is in English by default. Pick Language, then Português, in the plugin menu to switch it to Brazilian Portuguese. The choice lives in `~/Library/Application Support/usdbrl-swiftbar/lang`.
 
-## Change the refresh interval
+## Alerts
+
+Pick Alerts, then Add alert, type a target such as `5,80` or `5.80` and confirm. A target above the current rate fires when the rate rises to it, and a target below fires when the rate drops to it. Each alert fires once, shows a macOS notification and goes away. Click an alert in the menu to remove it before it fires.
+
+Alerts live in `~/Library/Application Support/usdbrl-swiftbar/alerts`. The same actions work from a terminal.
 
 ```bash
-bash install.sh --interval 5m
+PLUGIN="$HOME/Library/Application Support/SwiftBar/Plugins/usdbrl.1m.sh"
+"$PLUGIN" --add-alert 5.80
+"$PLUGIN" --remove-alert above 5.8
+"$PLUGIN" --clear-alerts
 ```
 
-The installer replaces the previous `usdbrl.*.sh` file, because SwiftBar reads the interval from the file name. Intervals under 1 minute add load on the sources without much gain. See [How the plugin works](../how-it-works/index.md) for how fresh each source is.
+The notification comes from `osascript`, so macOS lists it under Script Editor in System Settings, Notifications. If no notification shows up, allow notifications for Script Editor there.
+
+## Change the refresh interval
+
+Pick Refresh interval in the plugin menu and choose 30 s, 1, 5, 15 or 30 min. SwiftBar reads the interval from the file name, so the plugin renames itself, for example to `usdbrl.5m.sh`, and SwiftBar reloads it.
+
+The installer accepts other values too, and keeps the installed interval when `--interval` is left out.
+
+```bash
+bash install.sh --interval 2h
+```
+
+Intervals under 1 minute add load on the sources without much gain. See [How the plugin works](../how-it-works/index.md) for how fresh each source is. If the menu bar item moves after a change, hold Command and drag it back.
 
 ## Work from a clone
 
