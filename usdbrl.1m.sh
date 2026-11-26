@@ -1,6 +1,6 @@
 #!/bin/bash
 # <xbar.title>USD/BRL</xbar.title>
-# <xbar.version>v2.0.0</xbar.version>
+# <xbar.version>v1.0.0</xbar.version>
 # <xbar.desc>USD/BRL exchange rate in the menu bar, with source fallback and a local cache.</xbar.desc>
 # <xbar.dependencies>curl, plutil, awk (built into macOS)</xbar.dependencies>
 # <swiftbar.hideAbout>true</swiftbar.hideAbout>
