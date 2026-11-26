@@ -2,10 +2,10 @@
 set -euo pipefail
 umask 077
 # scripts/release.sh replaces these assignments when preparing the release installer.
-readonly VERSION='v2.0.1'
-readonly PLUGIN_BUILD=''
-readonly PLUGIN_SHA256_ARM64='43686e1ad75ea228bb57755267c2c64168205ec10ee92a3385ac1cef50bf4e63'
-readonly PLUGIN_SHA256_AMD64='402ecb5274928f0249c7f9d502386d12fe2887f2f8fbde1cc8f7bc55e6e689b5'
+readonly VERSION='v2.0.2'
+readonly PLUGIN_BUILD='20261126.222409'
+readonly PLUGIN_SHA256_ARM64='ffde27d1088170bb1d9516165a3b23ee156ce129d8935404653fabb6f255666b'
+readonly PLUGIN_SHA256_AMD64='e71c9dc73c7e905961d061a509ed63b410d7ae3e40ead035241b5114e9532812'
 
 readonly REPO='fascari/swiftbar-usdbrl'
 readonly APP='/Applications/SwiftBar.app'
