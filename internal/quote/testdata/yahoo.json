@@ -1,0 +1,18 @@
+{
+  "chart": {
+    "result": [
+      {
+        "meta": {
+          "currency": "BRL",
+          "symbol": "USDBRL=X",
+          "regularMarketPrice": 5.726600,
+          "regularMarketChangePercent": -1.621700,
+          "regularMarketDayHigh": 5.825400,
+          "regularMarketDayLow": 5.708400,
+          "regularMarketTime": 1795704835
+        }
+      }
+    ],
+    "error": null
+  }
+}

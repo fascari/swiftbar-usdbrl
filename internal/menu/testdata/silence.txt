@@ -1,0 +1,28 @@
+US$ 5.74 • 0.00%
+---
+Current rate: R$ 5.74
+Daily change: • 0.00%
+Day high: R$ 5.82
+Day low: R$ 5.62
+---
+Source updated: 2026-11-26 14:44:59 (15 min ago)
+Checked at 14:59:30
+⚠ Stale quote: last source quote 15 min ago (market may be closed) | color=#bc4c00,#ffa657
+Source: Yahoo Finance | href=https://finance.yahoo.com/quote/USDBRL%3DX/
+---
+Refresh now | refresh=true
+Alerts
+--≥ R$ 5.80 | bash="/tmp/SwiftBar Plugins/usdbrl.5m.sh" param1=--remove-alert param2=above param3=5.80 terminal=false refresh=true
+--≤ R$ 5.60 | bash="/tmp/SwiftBar Plugins/usdbrl.5m.sh" param1=--remove-alert param2=below param3=5.6 terminal=false refresh=true
+--Add alert… | bash="/tmp/SwiftBar Plugins/usdbrl.5m.sh" param1=--add-alert terminal=false refresh=true
+--Clear all | bash="/tmp/SwiftBar Plugins/usdbrl.5m.sh" param1=--clear-alerts terminal=false refresh=true
+--Click an alert to remove it | size=11
+Refresh interval
+--30 s | bash="/tmp/SwiftBar Plugins/usdbrl.5m.sh" param1=--set-interval param2=30s terminal=false
+--1 min | bash="/tmp/SwiftBar Plugins/usdbrl.5m.sh" param1=--set-interval param2=1m terminal=false
+--5 min | bash="/tmp/SwiftBar Plugins/usdbrl.5m.sh" param1=--set-interval param2=5m terminal=false checked=true
+--15 min | bash="/tmp/SwiftBar Plugins/usdbrl.5m.sh" param1=--set-interval param2=15m terminal=false
+--30 min | bash="/tmp/SwiftBar Plugins/usdbrl.5m.sh" param1=--set-interval param2=30m terminal=false
+Language
+--English | bash="/tmp/SwiftBar Plugins/usdbrl.5m.sh" param1=--set-lang param2=en terminal=false refresh=true checked=true
+--Português | bash="/tmp/SwiftBar Plugins/usdbrl.5m.sh" param1=--set-lang param2=pt terminal=false refresh=true

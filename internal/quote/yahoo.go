@@ -1,0 +1,71 @@
+package quote
+
+import (
+	"encoding/json"
+	"strconv"
+	"strings"
+)
+
+type feedNumber string
+
+type yahooResponse struct {
+	Chart struct {
+		Result []struct {
+			Meta struct {
+				Symbol    string     `json:"symbol"`
+				Currency  string     `json:"currency"`
+				Price     feedNumber `json:"regularMarketPrice"`
+				ChangePct feedNumber `json:"regularMarketChangePercent"`
+				High      feedNumber `json:"regularMarketDayHigh"`
+				Low       feedNumber `json:"regularMarketDayLow"`
+				Time      feedNumber `json:"regularMarketTime"`
+			} `json:"meta"`
+		} `json:"result"`
+	} `json:"chart"`
+}
+
+func parseYahoo(body []byte) (Quote, error) {
+	var reply yahooResponse
+	err := json.Unmarshal(body, &reply)
+	if err != nil {
+		return Quote{}, err
+	}
+	if len(reply.Chart.Result) == 0 {
+		return Quote{}, errInvalidQuote
+	}
+	meta := reply.Chart.Result[0].Meta
+	isDollarReal := (meta.Symbol == "USDBRL=X" || meta.Symbol == "BRL=X") && meta.Currency == "BRL"
+	if !isDollarReal {
+		return Quote{}, errInvalidQuote
+	}
+	return parseText(Yahoo, quoteText{
+		price:     meta.Price,
+		changePct: meta.ChangePct,
+		high:      meta.High,
+		low:       meta.Low,
+		epoch:     meta.Time,
+	})
+}
+
+// UnmarshalJSON matches plutil's six-place formatting for real JSON numbers.
+// Quoted numbers stay unchanged so the cache validator sees the original text.
+func (n *feedNumber) UnmarshalJSON(raw []byte) error {
+	if raw[0] == '"' {
+		return json.Unmarshal(raw, (*string)(n))
+	}
+	var text json.Number
+	if err := json.Unmarshal(raw, &text); err != nil {
+		return err
+	}
+	value := string(text)
+	if !strings.ContainsAny(value, ".eE") {
+		*n = feedNumber(value)
+		return nil
+	}
+	number, err := text.Float64()
+	if err != nil {
+		return err
+	}
+	*n = feedNumber(strconv.FormatFloat(number, 'f', 6, 64))
+	return nil
+}
