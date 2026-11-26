@@ -1,6 +1,6 @@
 # swiftbar-usdbrl
 
-SwiftBar plugin that shows the USD/BRL exchange rate in the macOS menu bar. A single Bash script checks Yahoo Finance every minute, falls back to AwesomeAPI when Yahoo fails, and keeps the last valid quote in a local cache. It runs on tools that ship with macOS.
+SwiftBar plugin that shows the USD/BRL exchange rate in the macOS menu bar. The Go plugin checks Yahoo Finance every minute by default, falls back to AwesomeAPI and keeps the last valid quote in a local cache. It runs on macOS 12 or later, on Apple Silicon and Intel.
 
 ## Features
 
@@ -19,12 +19,12 @@ SwiftBar plugin that shows the USD/BRL exchange rate in the macOS menu bar. A si
 - [SwiftBar](https://swiftbar.app/) runs the plugin and draws the menu.
 - [Yahoo Finance](https://finance.yahoo.com/quote/USDBRL%3DX/) chart endpoint as the primary source.
 - [AwesomeAPI](https://docs.awesomeapi.com.br/api-de-moedas) as the fallback source.
-- Bash 3.2, `curl`, `plutil` and `awk`, all built into macOS.
+- Go 1.26.5 and its standard library. A short Bash wrapper connects the binary to SwiftBar.
 - [mise](https://mise.jdx.dev/) tasks for checks, tests and installation.
 
 ## Getting started
 
-Download the installer from the latest release, read it, then run it. It installs SwiftBar through Homebrew when missing, checks its signature and notarization, and downloads the plugin with a pinned SHA-256.
+Download the installer from the latest release, read it, then run it. It installs SwiftBar through Homebrew when missing, verifies its signature and notarization, and verifies the downloaded plugin binary against the SHA-256 for your Mac.
 
 ```bash
 curl -fsSLO https://github.com/fascari/swiftbar-usdbrl/releases/latest/download/install.sh
@@ -33,7 +33,7 @@ bash install.sh --login-item
 
 Drop `--login-item` to skip starting SwiftBar at login. `bash install.sh --uninstall` removes the plugin and keeps SwiftBar.
 
-From a clone, `mise run install` installs the working copy and `mise run test` runs the smoke test, which needs network access.
+From a clone, `mise run build` builds `bin/usdbrl`, `mise run install` installs it, and `mise run test` runs the Go unit tests and a smoke test that needs network access.
 
 ## Docs
 

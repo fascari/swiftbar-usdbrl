@@ -2,7 +2,7 @@
 
 ## Requirements
 
-- macOS 12 or later, required by the SwiftBar cask.
+- macOS 12 or later on Apple Silicon or Intel.
 - [Homebrew](https://brew.sh/), used to install SwiftBar when it's missing.
 - [mise](https://mise.jdx.dev/), only to work from a clone.
 
@@ -20,10 +20,10 @@ The installer runs these steps and stops at the first failure.
 1. Installs SwiftBar from the official Homebrew cask when `/Applications/SwiftBar.app` is missing.
 2. Checks the code signature, requires the Ameba Labs team ID `X93LWC49WV` and requires Gatekeeper to accept the app as notarized.
 3. Keeps the plugin directory already set in SwiftBar, or sets `~/Library/Application Support/SwiftBar/Plugins` when there is none.
-4. Downloads `usdbrl.1m.sh` from the same release and compares its SHA-256 with the value pinned in `install.sh`.
-5. Installs the plugin with mode 700 and opens or refreshes SwiftBar.
+4. Downloads `usdbrl-darwin-arm64` for Apple Silicon, including under Rosetta, or `usdbrl-darwin-amd64` for Intel. It compares the SHA-256 with the pin in `install.sh` and checks the binary's format, architecture and version.
+5. Installs the Go binary at `~/Library/Application Support/usdbrl-swiftbar/bin/usdbrl` and the wrapper `usdbrl.<interval>.sh` in the SwiftBar plugin directory. It opens or refreshes SwiftBar.
 
-The installer never turns off Gatekeeper, never strips the quarantine attribute and only asks for a permission with `--login-item`.
+The plugin binary is not notarized. On Apple Silicon the Go linker signs it ad hoc. The installer downloads it with `curl`, which does not add the browser's quarantine attribute. The installer leaves macOS security settings and quarantine attributes alone. Only `--login-item` asks for Automation permission.
 
 ### Options
 
@@ -31,10 +31,12 @@ The installer never turns off Gatekeeper, never strips the quarantine attribute 
 |---|---|
 | `--login-item` | Start SwiftBar at login through System Events. macOS asks once for Automation permission. |
 | `--interval <n>` | Refresh interval, such as `30s`, `5m` or `1h`. Defaults to the installed one, or `1m`. |
-| `--plugin <file>` | Install a local plugin file instead of the release asset. |
+| `--plugin <file>` | Install a local Go binary for this Mac instead of downloading the release asset. |
 | `--uninstall` | Remove the plugin, its cache and its settings, keeping SwiftBar. |
 
 Running the installer again updates the plugin in place. The pinned checksum protects against a corrupted or altered download, but `install.sh` and the plugin come from the same release, so reading `install.sh` before running it is still the way to trust it.
+
+An update from v1.1.1 keeps the refresh interval, language, alerts and cache. To downgrade, run the [v1.1.1 installer](https://github.com/fascari/swiftbar-usdbrl/releases/download/v1.1.1/install.sh). It replaces the wrapper with the old script, which can read the same data. The Go binary stays unused in the config directory until uninstall removes it.
 
 ### Verify SwiftBar by hand
 
@@ -82,21 +84,52 @@ Intervals under 1 minute add load on the sources without much gain. See [How the
 
 ```bash
 mise trust
+mise run build
 mise run test
 mise run install
 ```
 
 `mise run install` passes extra flags to `install.sh`, for example `mise run install -- --interval 5m`. The smoke test uses temporary cache and config directories and the network, and never touches the real files.
 
-`mise run check`, which `test` and `install` run first, checks the syntax and lints every script with ShellCheck 0.10.0, the version GoLand bundles. mise installs ShellCheck for this project only, and the plugin doesn't need it to run.
+`mise run check` checks Bash syntax and runs ShellCheck. `mise run lint` checks Go code and formatting. `bash scripts/parity.sh` compares the menu against the v1.1.1 tag after `mise run build`. Its offline cases cover the cached and empty states, and two live cases compare the success path with the real AwesomeAPI, so the script needs network access.
+
+Edit menu text in `internal/locale/en.json` and `internal/locale/pt.json`. Go embeds both catalogs in the binary. Keep the same keys and format placeholders in both files.
 
 ## Release
 
 ```bash
-mise run release v1.0.0
+mise run release v2.0.0
 ```
 
-The release task pins the plugin version and SHA-256 in `install.sh`, runs the smoke test, commits, tags, pushes and creates the GitHub release with `install.sh` and `usdbrl.1m.sh` as assets.
+The release task builds both binaries twice, including once from a clean git export, and verifies that their checksums match. It runs the checks and tests, pins both checksums in `install.sh`, commits, tags, pushes and publishes the installer and both binaries.
+
+### Rebuild and check a release
+
+From a clone with tags and the pinned Go toolchain installed through mise:
+
+```bash
+version=v2.0.0
+work=$(mktemp -d)
+mkdir "$work/source"
+git archive "$version" | tar -xf - -C "$work/source"
+(
+  cd "$work/source"
+  for arch in arm64 amd64; do
+    binary="usdbrl-darwin-$arch"
+    mise exec -- env GOOS=darwin GOARCH="$arch" GOARM64=v8.0 GOAMD64=v1 \
+      CGO_ENABLED=0 GOTOOLCHAIN=local GOWORK=off GOFLAGS='' \
+      go build -trimpath -buildvcs=false -ldflags "-s -w -X main.version=$version" \
+      -o "$work/$binary" ./cmd
+    curl -fsSL "https://github.com/fascari/swiftbar-usdbrl/releases/download/$version/$binary" \
+      -o "$work/downloaded-$binary"
+    cmp "$work/$binary" "$work/downloaded-$binary" || exit 1
+    shasum -a 256 "$work/$binary"
+  done
+)
+grep '^readonly PLUGIN_SHA256_' "$work/source/install.sh"
+```
+
+Compare the two printed SHA-256 values with the matching pins from `install.sh`.
 
 ## Uninstall
 
