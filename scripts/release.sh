@@ -31,6 +31,7 @@ work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 mkdir -p "$work/source"
 git archive HEAD | tar -xf - -C "$work/source"
+build_id=$(date -u +%Y%m%d.%H%M%S)
 for arch in arm64 amd64; do
   binary="$work/usdbrl-darwin-$arch"
   build "$PWD" "$binary" "$arch"
@@ -54,6 +55,7 @@ arm_sum=$(checksum "$work/usdbrl-darwin-arm64")
 amd_sum=$(checksum "$work/usdbrl-darwin-amd64")
 sed -E \
   -e "s|^readonly VERSION=.*|readonly VERSION='$version'|" \
+  -e "s|^readonly PLUGIN_BUILD=.*|readonly PLUGIN_BUILD='$build_id'|" \
   -e "s|^readonly PLUGIN_SHA256_ARM64=.*|readonly PLUGIN_SHA256_ARM64='$arm_sum'|" \
   -e "s|^readonly PLUGIN_SHA256_AMD64=.*|readonly PLUGIN_SHA256_AMD64='$amd_sum'|" install.sh > "$work/install.sh"
 

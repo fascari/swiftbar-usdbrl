@@ -111,7 +111,11 @@ verify_arch() {
   [ "$(cat "$config/alerts")" = 'above 5.80' ]
   [ "$(cut -f2 "$cache/last.tsv")" = 5.75 ]
   grep -qxF '# <xbar.about>https://github.com/fascari/swiftbar-usdbrl</xbar.about>' "$wrapper"
-  grep -qxF "# <xbar.version>$expected_version</xbar.version>" "$wrapper"
+  build=$(sed -n "s/^readonly PLUGIN_BUILD='\(.*\)'$/\1/p" "$installer")
+  if [ -z "$build" ]; then
+    build=$(shasum -a 256 "$assets/usdbrl-darwin-$target" | awk '{ print substr($1, 1, 12) }')
+  fi
+  grep -qxF "# <xbar.version>$expected_version (build $build)</xbar.version>" "$wrapper"
   if grep -qxF '# <swiftbar.hideAbout>true</swiftbar.hideAbout>' "$wrapper"; then
     printf 'FAIL About is hidden\n' >&2
     return 1

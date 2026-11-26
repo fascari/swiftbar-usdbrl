@@ -3,6 +3,7 @@ set -euo pipefail
 umask 077
 # scripts/release.sh replaces these assignments when preparing the release installer.
 readonly VERSION='v2.0.1'
+readonly PLUGIN_BUILD=''
 readonly PLUGIN_SHA256_ARM64='43686e1ad75ea228bb57755267c2c64168205ec10ee92a3385ac1cef50bf4e63'
 readonly PLUGIN_SHA256_AMD64='402ecb5274928f0249c7f9d502386d12fe2887f2f8fbde1cc8f7bc55e6e689b5'
 
@@ -219,7 +220,7 @@ install_plugin() (
   local interval=$1 local_plugin=$2 login_item=$3
   local work_dir staged_binary='' staged_wrapper=''
   local previous_dir plugin_dir wrapper existing
-  local display_version=$VERSION build
+  local build=$PLUGIN_BUILD
   if [ -n "$interval" ]; then
     [[ $interval =~ ^[0-9]+[smhd]$ ]] || die "invalid interval: $interval (examples: 30s, 1m, 5m, 1h)"
   fi
@@ -230,7 +231,8 @@ install_plugin() (
   prepare_binary "$work_dir/plugin" "$local_plugin"
   if [ -n "$local_plugin" ]; then
     build=$(stat -f '%Sm' -t '%Y%m%d.%H%M%S' -- "$local_plugin")
-    display_version="$VERSION (build $build)"
+  elif [ -z "$build" ]; then
+    build=$(shasum -a 256 "$work_dir/plugin" | awk '{ print substr($1, 1, 12) }')
   fi
   ensure_swiftbar
   verify_swiftbar
@@ -253,7 +255,7 @@ install_plugin() (
   staged_binary=$(mktemp "$CONFIG_DIR/bin/.usdbrl.XXXXXX")
   staged_wrapper=$(mktemp "$plugin_dir/.usdbrl.XXXXXX")
   install -m 700 "$work_dir/plugin" "$staged_binary"
-  render_wrapper "$display_version" >"$staged_wrapper"
+  render_wrapper "$VERSION (build $build)" >"$staged_wrapper"
   bash -n "$staged_wrapper"
   chmod 700 "$staged_wrapper"
 
