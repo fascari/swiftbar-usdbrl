@@ -5,6 +5,7 @@
 # Usage: test/smoke.sh [plugin-path]
 
 set -u
+umask 077
 PLUGIN=${1:-"$(cd "$(dirname "$0")/.." && pwd)/usdbrl.1m.sh"}
 TMP=$(mktemp -d "${TMPDIR:-/tmp}/usdbrl-smoke.XXXXXX")
 trap 'rm -rf "$TMP"' EXIT
@@ -52,7 +53,7 @@ rc_is_zero() { [ "$RC" -eq 0 ]; }
 
 # forge_cache <dir> <price> <change%> <timestamp>
 forge_cache() {
-  mkdir -p -m 700 "$1"
+  mkdir -p "$1"
   printf 'yahoo\t%s\t%s\t6.0\t5.0\t%s\n' "$2" "$3" "$4" >"$1/last.tsv"
 }
 
@@ -100,7 +101,7 @@ echo '# no source responds, no valid quote'
 run "$TMP/none" "$DOWN" "$DOWN"
 check 'no cache: shows US$ --.-- and makes up no value' bar_matches '^US\$ --\.-- ⚠$'
 check 'no cache: menu explains why' out_has '⚠ No quote available: no source responded'
-mkdir -p -m 700 "$TMP/bad" && printf 'yahoo\tjunk\t1\t2\t3\t4\n' >"$TMP/bad/last.tsv"
+mkdir -p "$TMP/bad" && printf 'yahoo\tjunk\t1\t2\t3\t4\n' >"$TMP/bad/last.tsv"
 run "$TMP/bad" "$DOWN" "$DOWN"
 check 'corrupted cache: shows US$ --.--' bar_matches '^US\$ --\.-- ⚠$'
 
@@ -156,6 +157,12 @@ printf 'below %s\n' "$rate" >"$USDBRL_CONFIG_DIR/alerts"
 forge_cache "$TMP/exact" "$rate" -1.0 "$((NOW + 60))"
 run "$TMP/exact" "$YAHOO" "$AWESOME"
 check 'no "(now ...)" when the rate equals the target' grep -qE '^USD/BRL reached R\$ [0-9]+\.[0-9]{2}$' "$USDBRL_NOTIFY_LOG"
+printf 'above 5.74\nbelow 5.73\n' >"$USDBRL_CONFIG_DIR/alerts"
+: >"$USDBRL_NOTIFY_LOG"
+forge_cache "$TMP/rounded" 5.7351 -1.0 "$((NOW + 60))"
+run "$TMP/rounded" "$YAHOO" "$AWESOME"
+check 'a rate shown as 5.74 (5.7351) fires a 5.74 alert' grep -qxF 'USD/BRL reached R$ 5.74' "$USDBRL_NOTIFY_LOG"
+check 'the same rate keeps a 5.73 alert below it' [ "$(cat "$USDBRL_CONFIG_DIR/alerts")" = 'below 5.73' ]
 printf 'above 99\n' >"$USDBRL_CONFIG_DIR/alerts"
 check 'the fired alert is removed and the other kept' [ "$(cat "$USDBRL_CONFIG_DIR/alerts")" = 'above 99' ]
 alert --remove-alert above 99

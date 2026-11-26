@@ -15,12 +15,18 @@
 # Usage: usdbrl.1m.sh [--set-lang en|pt] [--set-interval 30s|1m|5m|15m|30m]
 #        usdbrl.1m.sh [--add-alert [rate]] [--remove-alert above|below <rate>] [--clear-alerts]
 # Test overrides: USDBRL_YAHOO_URL, USDBRL_AWESOME_URL (https only), USDBRL_CACHE_DIR,
-# USDBRL_CONFIG_DIR.
+# USDBRL_CONFIG_DIR, USDBRL_NOTIFY_LOG.
+#
+# Written for the Bash 3.2 that ships with macOS: no associative arrays, namerefs or ";&".
+# Sections: settings, UI strings, helpers, quote sources, cache, plugin file, alerts,
+# menu rendering, entry point.
 
 set -u
 umask 077
 export PATH=/usr/bin:/bin
 export LC_ALL=C
+
+# -- Settings ------------------------------------------------------------------
 
 readonly YAHOO_URL="${USDBRL_YAHOO_URL:-https://query1.finance.yahoo.com/v8/finance/chart/USDBRL=X?range=1d&interval=1d}"
 readonly AWESOME_URL="${USDBRL_AWESOME_URL:-https://economia.awesomeapi.com.br/json/last/USD-BRL}"
@@ -37,6 +43,8 @@ readonly INTERVALS='30s 1m 5m 15m 30m'
 
 readonly UP='#1a7f37,#3fb950' DOWN='#cf222e,#ff7b72' WARN='#bc4c00,#ffa657'
 
+# -- UI strings ----------------------------------------------------------------
+
 # load_strings <en|pt>: sets the UI strings and number/date formats.
 load_strings() {
   if [ "$1" = pt ]; then
@@ -45,7 +53,7 @@ load_strings() {
     L_UPDATED='Atualizado na fonte' L_CHECKED='Consultado às' L_STALE='Cotação desatualizada'
     L_LAST_OK='Última consulta bem-sucedida' L_SOURCE='Fonte' L_REFRESH='Atualizar agora'
     L_ALERTS='Alertas' L_ADD_ALERT='Adicionar alerta…' L_CLEAR_ALERTS='Remover todos'
-    L_ALERT_HINT='Clique num alerta para removê-lo' L_ALERT_PROMPT='Avisar quando o USD/BRL chegar a (R$):'
+    L_ALERT_HINT='Clique num alerta para removê-lo' L_ALERT_PROMPT='Avisar quando o USD/BRL chegar a (R$, ex.: 5,80):' L_ALERT_INVALID='Valor inválido: "%s". Use um número como 5,80.'
     L_ALERT_HIT='USD/BRL chegou a R$ %s' L_ALERT_NOW=' (agora R$ %s)' L_ALERT_NO_RATE='Sem cotação para comparar ainda.'
     L_INTERVAL='Intervalo de atualização' L_LANG='Idioma' L_NO_QUOTE='Sem cotação disponível' L_NO_CACHE='Nenhuma cotação válida em cache.'
     L_SILENT='última cotação da fonte %s (possível mercado fechado)'
@@ -62,7 +70,7 @@ load_strings() {
     L_UPDATED='Source updated' L_CHECKED='Checked at' L_STALE='Stale quote'
     L_LAST_OK='Last successful check' L_SOURCE='Source' L_REFRESH='Refresh now'
     L_ALERTS='Alerts' L_ADD_ALERT='Add alert…' L_CLEAR_ALERTS='Clear all'
-    L_ALERT_HINT='Click an alert to remove it' L_ALERT_PROMPT='Notify me when USD/BRL reaches (R$):'
+    L_ALERT_HINT='Click an alert to remove it' L_ALERT_PROMPT='Notify me when USD/BRL reaches (R$, e.g. 5.80):' L_ALERT_INVALID='Invalid value: "%s". Use a number like 5.80.'
     L_ALERT_HIT='USD/BRL reached R$ %s' L_ALERT_NOW=' (now R$ %s)' L_ALERT_NO_RATE='No rate to compare with yet.'
     L_INTERVAL='Refresh interval' L_LANG='Language' L_NO_QUOTE='No quote available' L_NO_CACHE='No valid quote in cache.'
     L_SILENT='last source quote %s (market may be closed)'
@@ -76,9 +84,56 @@ load_strings() {
   fi
 }
 
+# -- Helpers -------------------------------------------------------------------
+
 is_dec()   { [[ $1 =~ ^[0-9]+(\.[0-9]+)?$ ]]; }
 is_sdec()  { [[ $1 =~ ^-?[0-9]+(\.[0-9]+)?$ ]]; }
 is_epoch() { [[ $1 =~ ^[0-9]{9,11}$ ]]; }
+
+# fmt <var> <format> [args...]: printf -v for the UI formats set in load_strings.
+fmt() {
+  # shellcheck disable=SC2059 # the format is a UI string constant, never user input
+  printf -v "$1" "$2" "${@:3}"
+}
+
+sign_of() { awk -v v="$1" 'BEGIN { r = sprintf("%.2f", v) + 0; print (r > 0) - (r < 0) }'; }
+
+num() {
+  local s
+  printf -v s '%.2f' "$1"
+  printf '%s' "${s/./$DEC}"
+}
+
+ago() {
+  local s=$1 d
+  [ "$s" -lt 0 ] && s=0
+  if [ "$s" -lt 60 ]; then
+    printf '%s' "$AGO_NOW"
+    return
+  elif [ "$s" -lt 3600 ]; then
+    d="$((s / 60)) min"
+  elif [ "$s" -lt 86400 ]; then
+    printf -v d '%d h %02d min' $((s / 3600)) $(((s % 3600) / 60))
+  else
+    d="$((s / 86400)) d $(((s % 86400) / 3600)) h"
+  fi
+  fmt d "$AGO_FMT" "$d"
+  printf '%s' "$d"
+}
+
+stamp() { date -r "$1" "+$DATE_FMT"; }
+
+# write_file <dir> <file> <content>: atomic write; umask 077 keeps new directories at 700.
+write_file() {
+  local tmp
+  mkdir -p "$1" 2>/dev/null || return 1
+  tmp=$(mktemp "$1/.tmp.XXXXXX") || return 1
+  if printf '%s\n' "$3" >"$tmp" && mv -f "$tmp" "$2"; then return 0; fi
+  rm -f "$tmp"
+  return 1
+}
+
+# -- Quote sources -------------------------------------------------------------
 
 # get <json> <keypath>: extracts one value with plutil, failing on invalid JSON.
 get() { printf '%s' "$1" | plutil -extract "$2" raw -o - - 2>/dev/null; }
@@ -111,13 +166,6 @@ parse_awesome() {
     "$(get "$j" USDBRL.high)" "$(get "$j" USDBRL.low)" "$(get "$j" USDBRL.timestamp)"
 }
 
-# load_line <line>: loads Q_* from a TSV line after validating it again.
-load_line() {
-  local extra
-  IFS=$'\t' read -r Q_SRC Q_PRICE Q_PCT Q_HIGH Q_LOW Q_TS extra <<<"$1"
-  quote_line "$Q_SRC" "$Q_PRICE" "$Q_PCT" "$Q_HIGH" "$Q_LOW" "$Q_TS" >/dev/null && [ -z "$extra" ]
-}
-
 source_name() { case $1 in yahoo) printf 'Yahoo Finance' ;; *) printf 'AwesomeAPI' ;; esac; }
 source_href() {
   case $1 in
@@ -139,7 +187,11 @@ curl_error() {
     22 | 56) printf '%s' "$E_HTTP" ;;
     6 | 7 | 28) printf '%s' "$E_CONN" ;;
     35 | 51 | 58 | 60 | 77 | 83 | 90 | 91) printf '%s' "$E_TLS" ;;
-    *) printf "$E_CURL" "$1" ;;
+    *)
+      local s
+      fmt s "$E_CURL" "$1"
+      printf '%s' "$s"
+      ;;
   esac
 }
 
@@ -153,46 +205,45 @@ try_source() {
     return 1
   fi
   code=${out##*$'\n'}
-  if ! LINE=$("parse_$1" "${out%$'\n'*}"); then
-    printf -v ERR "$E_INVALID" "$code"
+  out=${out%$'\n'*}
+  case $1 in
+    yahoo) LINE=$(parse_yahoo "$out") ;;
+    awesome) LINE=$(parse_awesome "$out") ;;
+  esac || {
+    fmt ERR "$E_INVALID" "$code"
     return 1
-  fi
+  }
 }
 
-write_file() { # write_file <dir> <file> <content>
-  local tmp
-  mkdir -p -m 700 "$1" 2>/dev/null || return 1
-  tmp=$(mktemp "$1/.tmp.XXXXXX") || return 1
-  if printf '%s\n' "$3" >"$tmp" && mv -f "$tmp" "$2"; then return 0; fi
-  rm -f "$tmp"
+# try_yahoo <now>: tries Yahoo unless it failed in the last PAUSE_FOR seconds. Sets LINE on
+# success; on failure or pause, sets the caller's primary_warn and returns 1. The pause file
+# holds the reason for the last failure.
+try_yahoo() {
+  local reason
+  if [ -f "$YAHOO_PAUSE" ] && [ $(($1 - $(stat -f %m "$YAHOO_PAUSE"))) -lt "$PAUSE_FOR" ]; then
+    reason=$(head -c 120 "$YAHOO_PAUSE" | tr -d '|\n')
+    fmt primary_warn "$L_YAHOO_PAUSED" "${reason:-?}"
+    return 1
+  fi
+  if try_source yahoo "$YAHOO_URL"; then
+    rm -f "$YAHOO_PAUSE"
+    return 0
+  fi
+  fmt primary_warn "$L_YAHOO_DOWN" "$ERR"
+  write_file "$CACHE_DIR" "$YAHOO_PAUSE" "$ERR"
   return 1
 }
 
-sign_of() { awk -v v="$1" 'BEGIN { r = sprintf("%.2f", v) + 0; print (r > 0) - (r < 0) }'; }
+# -- Cache ---------------------------------------------------------------------
 
-num() {
-  local s
-  printf -v s '%.2f' "$1"
-  printf '%s' "${s/./$DEC}"
+# load_line <line>: loads Q_* from a TSV line after validating it again.
+load_line() {
+  local extra
+  IFS=$'\t' read -r Q_SRC Q_PRICE Q_PCT Q_HIGH Q_LOW Q_TS extra <<<"$1"
+  quote_line "$Q_SRC" "$Q_PRICE" "$Q_PCT" "$Q_HIGH" "$Q_LOW" "$Q_TS" >/dev/null && [ -z "$extra" ]
 }
 
-ago() {
-  local s=$1 d
-  [ "$s" -lt 0 ] && s=0
-  if [ "$s" -lt 60 ]; then
-    printf '%s' "$AGO_NOW"
-    return
-  elif [ "$s" -lt 3600 ]; then
-    d="$((s / 60)) min"
-  elif [ "$s" -lt 86400 ]; then
-    printf -v d '%d h %02d min' $((s / 3600)) $(((s % 3600) / 60))
-  else
-    d="$((s / 86400)) d $(((s % 86400) / 3600)) h"
-  fi
-  printf "$AGO_FMT" "$d"
-}
-
-stamp() { date -r "$1" "+$DATE_FMT"; }
+# -- Plugin file and refresh interval ------------------------------------------
 
 plugin_path() { printf '%s' "${SWIFTBAR_PLUGIN_PATH:-$0}"; }
 
@@ -213,6 +264,8 @@ set_interval() {
   case $(basename "$self") in usdbrl.*.sh) ;; *) return ;; esac
   [ "$self" = "$dir/usdbrl.$1.sh" ] || mv -f "$self" "$dir/usdbrl.$1.sh"
 }
+
+# -- Alerts --------------------------------------------------------------------
 
 # read_alerts: prints the valid alert lines, ignoring anything malformed.
 read_alerts() {
@@ -237,25 +290,51 @@ notify() { # notify <message>
     -e 'end run' "$1" >/dev/null 2>&1
 }
 
+# parse_target <text>: prints the target with up to 2 decimals, accepting "5,80", "5.80" and
+# "R$ 5,80". Alerts work at the precision the menu bar shows.
+parse_target() {
+  local t=$1
+  t=${t//,/.}
+  t=${t//[[:space:]]/}
+  t=${t#R\$}
+  is_dec "$t" || return 1
+  t=$(awk -v t="$t" 'BEGIN { s = sprintf("%.2f", t); sub(/0+$/, "", s); sub(/\.$/, "", s); print s }')
+  awk -v t="$t" 'BEGIN { exit !(t > 0) }' || return 1
+  printf '%s' "$t"
+}
+
+# ask_target: shows the dialog until a valid target is typed (3 tries) or Cancel is pressed.
+ask_target() {
+  local prompt=$L_ALERT_PROMPT answer _
+  answer=$(num "$Q_PRICE")
+  for _ in 1 2 3; do
+    answer=$(osascript -e 'on run argv' \
+      -e 'text returned of (display dialog (item 1 of argv) default answer (item 2 of argv) with title "USD/BRL")' \
+      -e 'end run' "$prompt" "$answer" 2>/dev/null) || return 1
+    parse_target "$answer" && return 0
+    fmt prompt "$L_ALERT_INVALID"'\n\n%s' "${answer:0:20}" "$L_ALERT_PROMPT"
+  done
+  return 1
+}
+
 # add_alert [rate]: asks for a target when none is given; the direction comes from the
 # cached rate, so the alert fires when the rate crosses the target from where it is now.
 add_alert() {
-  local target=${1:-} line dir alerts
-  line=$(cat "$CACHE_FILE" 2>/dev/null) && load_line "$line" || {
+  local target line dir alerts
+  if ! line=$(cat "$CACHE_FILE" 2>/dev/null) || ! load_line "$line"; then
     notify "$L_ALERT_NO_RATE"
     return
-  }
-  if [ -z "$target" ]; then
-    target=$(osascript -e 'on run argv' \
-      -e 'text returned of (display dialog (item 1 of argv) default answer (item 2 of argv) with title "USD/BRL")' \
-      -e 'end run' "$L_ALERT_PROMPT" "$(num "$Q_PRICE")" 2>/dev/null) || return
   fi
-  target=${target//,/.}
-  target=${target//[[:space:]]/}
-  target=${target#R\$}
-  is_dec "$target" && awk -v t="$target" 'BEGIN { exit !(t > 0) }' || return
-  target=$(awk -v t="$target" 'BEGIN { s = sprintf("%.4f", t); sub(/0+$/, "", s); sub(/\.$/, "", s); print s }')
-  if awk -v t="$target" -v p="$Q_PRICE" 'BEGIN { exit !(t >= p) }'; then dir=above; else dir=below; fi
+  if [ -n "${1:-}" ]; then
+    target=$(parse_target "$1") || return
+  else
+    target=$(ask_target) || return
+  fi
+  if awk -v t="$target" -v p="$Q_PRICE" 'BEGIN { exit !(t >= sprintf("%.2f", p) + 0) }'; then
+    dir=above
+  else
+    dir=below
+  fi
   alerts=$(read_alerts)
   printf '%s\n' "$alerts" | grep -qxF "$dir $target" && return
   [ "$(printf '%s' "$alerts" | grep -c .)" -lt "$MAX_ALERTS" ] || return
@@ -266,16 +345,20 @@ remove_alert() { # remove_alert <above|below> <rate>
   save_alerts "$(read_alerts | grep -vxF "$1 $2")"
 }
 
-# check_alerts: fires and drops the alerts the current rate has reached.
+# check_alerts: fires and drops the alerts the current rate has reached. Rate and target are
+# both compared at 2 decimals, as the menu bar shows them: 5.7351 shows as 5.74 and fires a
+# 5.74 alert.
 check_alerts() {
   local dir val keep='' fired=0 msg
   while read -r dir val; do
     [ -n "$dir" ] || continue
-    if { [ "$dir" = above ] && awk -v p="$Q_PRICE" -v t="$val" 'BEGIN { exit !(p >= t) }'; } ||
-      { [ "$dir" = below ] && awk -v p="$Q_PRICE" -v t="$val" 'BEGIN { exit !(p <= t) }'; }; then
-      printf -v msg "$L_ALERT_HIT" "$(num "$val")"
+    if awk -v d="$dir" -v p="$Q_PRICE" -v t="$val" 'BEGIN {
+      p = sprintf("%.2f", p) + 0; t = sprintf("%.2f", t) + 0
+      exit !((d == "above" && p >= t) || (d == "below" && p <= t))
+    }'; then
+      fmt msg "$L_ALERT_HIT" "$(num "$val")"
       # The current rate only adds information when it jumped past the target.
-      [ "$(num "$val")" = "$(num "$Q_PRICE")" ] || printf -v msg "%s$L_ALERT_NOW" "$msg" "$(num "$Q_PRICE")"
+      [ "$(num "$val")" = "$(num "$Q_PRICE")" ] || fmt msg "%s$L_ALERT_NOW" "$msg" "$(num "$Q_PRICE")"
       notify "$msg"
       fired=1
     else
@@ -284,6 +367,8 @@ check_alerts() {
   done <<<"$(read_alerts)"
   [ "$fired" = 0 ] || save_alerts "${keep%$'\n'}"
 }
+
+# -- Menu rendering ------------------------------------------------------------
 
 render_alerts() { # render_alerts <plugin path>
   local self=$1 dir val alerts sign
@@ -352,7 +437,7 @@ render_quote() {
   else
     printf '%s %s\n' "$L_CHECKED" "$(date -r "$last_ok" '+%H:%M:%S')"
     if [ "$age" -gt "$STALE_AFTER" ]; then
-      printf -v silent "$L_SILENT" "$(ago "$age")"
+      fmt silent "$L_SILENT" "$(ago "$age")"
       printf '⚠ %s: %s | color=%s\n' "$L_STALE" "$silent" "$WARN"
     fi
   fi
@@ -369,29 +454,30 @@ render_empty() {
   render_footer
 }
 
-main() {
-  if [ "${1:-}" = --set-interval ]; then
-    set_interval "${2:-}"
-    return
-  fi
-  if [ "${1:-}" = --set-lang ]; then
-    case ${2:-} in en | pt) write_file "$CONFIG_DIR" "$LANG_FILE" "$2" ;; esac
-    return
-  fi
+# -- Entry point ---------------------------------------------------------------
 
+# load_language: loads the UI strings for the saved language, English by default.
+load_language() {
   UI_LANG=en
   [ -r "$LANG_FILE" ] && [ "$(<"$LANG_FILE")" = pt ] && UI_LANG=pt
   load_strings "$UI_LANG"
+}
 
-  if [ $# -gt 0 ]; then
-    case $1 in
-      --add-alert) add_alert "${2:-}" ;;
-      --remove-alert) remove_alert "${2:-}" "${3:-}" ;;
-      --clear-alerts) save_alerts '' ;;
-    esac
-    return 0
-  fi
+# handle_action <flag> [args...]: runs a menu action. Unknown flags do nothing.
+handle_action() {
+  case $1 in
+    --set-interval) set_interval "${2:-}" ;;
+    --set-lang) case ${2:-} in en | pt) write_file "$CONFIG_DIR" "$LANG_FILE" "$2" ;; esac ;;
+    --add-alert) add_alert "${2:-}" ;;
+    --remove-alert) remove_alert "${2:-}" "${3:-}" ;;
+    --clear-alerts) save_alerts '' ;;
+  esac
+  return 0
+}
 
+# refresh: fetches a quote (Yahoo, then AwesomeAPI, then the cache), fires the alerts it
+# reached and prints the menu.
+refresh() {
   local cached="" cache_mtime=0 now err="" primary_warn="" use="" new_ts LINE="" ERR=""
   now=$(date +%s)
   if [ -r "$CACHE_FILE" ]; then
@@ -399,22 +485,7 @@ main() {
     cache_mtime=$(stat -f %m "$CACHE_FILE")
   fi
 
-  # Yahoo first, unless it failed recently: no point in hitting an endpoint that blocks us.
-  local yahoo_ok=0
-  # The pause file holds the reason for the last Yahoo failure.
-  local yahoo_ok=0 reason
-  if [ -f "$YAHOO_PAUSE" ] && [ $((now - $(stat -f %m "$YAHOO_PAUSE"))) -lt "$PAUSE_FOR" ]; then
-    reason=$(head -c 120 "$YAHOO_PAUSE" | tr -d '|\n')
-    printf -v primary_warn "$L_YAHOO_PAUSED" "${reason:-?}"
-  elif try_source yahoo "$YAHOO_URL"; then
-    yahoo_ok=1
-    rm -f "$YAHOO_PAUSE"
-  else
-    printf -v primary_warn "$L_YAHOO_DOWN" "$ERR"
-    write_file "$CACHE_DIR" "$YAHOO_PAUSE" "$ERR"
-  fi
-
-  if [ "$yahoo_ok" = 1 ] || try_source awesome "$AWESOME_URL"; then
+  if try_yahoo "$now" || try_source awesome "$AWESOME_URL"; then
     use=$LINE
     load_line "$LINE"
     new_ts=$Q_TS
@@ -428,7 +499,7 @@ main() {
     cache_mtime=$now
   else
     # Only reached when Yahoo also failed or is paused.
-    printf -v err "$L_ALL_DOWN" "$ERR"
+    fmt err "$L_ALL_DOWN" "$ERR"
     primary_warn=''
   fi
 
@@ -439,6 +510,15 @@ main() {
     render_quote "$err" "$cache_mtime" "$primary_warn"
   else
     render_empty "${err:-$E_CACHE}"
+  fi
+}
+
+main() {
+  load_language
+  if [ $# -gt 0 ]; then
+    handle_action "$@"
+  else
+    refresh
   fi
 }
 

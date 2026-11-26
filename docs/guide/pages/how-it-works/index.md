@@ -71,6 +71,8 @@ Invalid responses include the HTTP status in the reason. The script always ends 
 
 Each alert is one `above <rate>` or `below <rate>` line in `~/Library/Application Support/usdbrl-swiftbar/alerts`, with mode 600. The direction comes from the cached rate when the alert is added. Alerts are checked only when a source has just returned a rate, so a cached rate shown after a failure never fires one. A fired alert sends one notification and is removed.
 
+Alerts work at the precision the menu bar shows. Targets are stored with 2 decimals, and the rate is rounded to 2 decimals before the comparison, so a rate of 5.7351 shows as 5.74 and fires a 5.74 alert.
+
 The target typed in the dialog and the notification text reach AppleScript as `on run` arguments, never spliced into the script source, and the target must be a positive decimal number.
 
 ## Privacy
