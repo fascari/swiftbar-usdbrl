@@ -9,6 +9,7 @@ The project started from the `cli-simple` variant of the Go scaffold in [`fascar
 - Keep `cmd/main.go` limited to startup, configuration, and dependency wiring. Put command dispatch and the refresh flow in `internal/cli`, and keep quote fetching, alerts, localization, and menu rendering in their own packages under `internal/`.
 - Follow the Go version pinned in `mise.toml`. Prefer the standard library, reuse existing code, and avoid abstractions that only rename a single operation.
 - Prefer early returns over `else`. Keep function signatures to three parameters. If more inputs are needed, group related inputs in a named struct.
+- In Go, prefer guard clauses for validation. Use a `switch` when it clarifies a type assertion or dispatch on a single typed value, such as a menu action.
 - Use typed constants for values shared across the CLI, menu, and state files, such as action flags and language codes. Define interfaces where they are used and name parameters whose roles would otherwise be unclear.
 - Use modern Go idioms supported by the pinned version, such as `errors.AsType` for typed error checks and `new(value)` when taking a pointer to a new value.
 - Keep Go and Bash comments focused on non-obvious intent, contracts, compatibility, or ordering. Remove comments that restate the code. Preserve directives, generated code markers, and SwiftBar metadata.

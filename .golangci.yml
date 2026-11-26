@@ -4,14 +4,32 @@ linters:
   default: none
   enable:
     - bodyclose
+    - decorder
     - errcheck
     - errorlint
+    - gocognit
+    - goconst
     - gocyclo
     - govet
     - ineffassign
+    - misspell
+    - nakedret
     - revive
     - staticcheck
+    - unconvert
+    - unparam
   settings:
+    decorder:
+      dec-order:
+        - const
+        - var
+        - type
+        - func
+      disable-dec-order-check: false
+      disable-dec-num-check: false
+      disable-init-func-first-check: false
+    gocognit:
+      min-complexity: 15
     revive:
       rules:
         - name: blank-imports
