@@ -10,6 +10,8 @@
 
 Download `install.sh` from the latest release, read it, then run it.
 
+The steps below describe the Go installer from v2.0.0 onward. Older releases install the Bash plugin. To try the Go version before release, [work from a clone](#work-from-a-clone).
+
 ```bash
 curl -fsSLO https://github.com/fascari/swiftbar-usdbrl/releases/latest/download/install.sh
 bash install.sh --login-item
