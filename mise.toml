@@ -1,6 +1,16 @@
+# Development only: nothing here is needed to run the plugin. Same ShellCheck as GoLand bundles.
+[tools]
+shellcheck = "0.10.0"
+
 [tasks.check]
-description = "Check shell syntax"
-run = ["bash -n usdbrl.1m.sh", "bash -n install.sh", "bash -n test/smoke.sh", "bash -n scripts/release.sh"]
+description = "Check shell syntax and lint with ShellCheck"
+run = [
+  "bash -n usdbrl.1m.sh",
+  "bash -n install.sh",
+  "bash -n test/smoke.sh",
+  "bash -n scripts/release.sh",
+  "shellcheck -s bash usdbrl.1m.sh install.sh test/smoke.sh scripts/release.sh",
+]
 
 [tasks.test]
 description = "Run the smoke test (needs network)"

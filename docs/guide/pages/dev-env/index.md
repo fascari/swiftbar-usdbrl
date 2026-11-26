@@ -53,7 +53,7 @@ The menu is in English by default. Pick Language, then Português, in the plugin
 
 ## Alerts
 
-Pick Alerts, then Add alert, type a target such as `5,80` or `5.80` and confirm. A target above the current rate fires when the rate rises to it, and a target below fires when the rate drops to it. Each alert fires once, shows a macOS notification and goes away. Click an alert in the menu to remove it before it fires.
+Pick Alerts, then Add alert, type a target such as `5,80`, `5.80` or `R$ 5,80` and confirm. An invalid value brings the dialog back with the error, up to three times. A target above the current rate fires when the rate rises to it, and a target below fires when the rate drops to it. Each alert fires once, shows a macOS notification and goes away. Click an alert in the menu to remove it before it fires.
 
 Alerts live in `~/Library/Application Support/usdbrl-swiftbar/alerts`. The same actions work from a terminal.
 
@@ -87,6 +87,8 @@ mise run install
 ```
 
 `mise run install` passes extra flags to `install.sh`, for example `mise run install -- --interval 5m`. The smoke test uses temporary cache and config directories and the network, and never touches the real files.
+
+`mise run check`, which `test` and `install` run first, checks the syntax and lints every script with ShellCheck 0.10.0, the version GoLand bundles. mise installs ShellCheck for this project only, and the plugin doesn't need it to run.
 
 ## Release
 

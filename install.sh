@@ -70,7 +70,7 @@ resolve_plugin_dir() {
     log "Setting the SwiftBar plugin directory to $PLUGIN_DIR"
     defaults write "$PREFS" PluginDirectory -string "$PLUGIN_DIR"
   fi
-  mkdir -p -m 700 "$PLUGIN_DIR"
+  mkdir -p "$PLUGIN_DIR" # umask 077 keeps new directories at 700
 }
 
 # fetch_plugin <dest>: copies the local plugin or downloads the release asset and checks it.
