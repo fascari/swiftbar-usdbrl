@@ -1,0 +1,72 @@
+# How the plugin works
+
+## Flow
+
+```mermaid
+flowchart TD
+  SB["SwiftBar runs the plugin every minute"] --> P{"Yahoo paused after a recent failure?"}
+  P -- "no" --> Y{"Yahoo Finance answers with a valid quote?"}
+  P -- "yes" --> A
+  Y -- "yes" --> W["write the cache unless the cached quote is newer"]
+  Y -- "no" --> PAUSE["pause Yahoo for 5 min and keep the reason"] --> A
+  A{"AwesomeAPI answers with a valid quote?"} -- "yes" --> W
+  A -- "no" --> C{"valid cache?"}
+  W --> R["menu with the quote"]
+  C -- "yes" --> RW["menu with the cached quote and a stale warning"]
+  C -- "no" --> E["menu bar shows US$ --.-- and the reason"]
+```
+
+## Choosing the sources
+
+The sources were compared on 2026-11-26 by querying each one directly.
+
+| Source | Freshness | Key | Day high, low and change | Outcome |
+|---|---|---|---|---|
+| Yahoo Finance chart endpoint | 1 to 11 s behind | no | yes | primary |
+| AwesomeAPI `/json/last` | new quote every ~5 min, CDN cache up to 5 min | no | yes | fallback |
+| Google Sheets `GOOGLEFINANCE` | up to 20 min | Sheets only | no high or low for currencies | rejected |
+| Banco Central PTAX | a few bulletins a day | no | no | rejected |
+| Frankfurter and open.er-api | daily | no | no | rejected |
+| Binance `USDTBRL` | real time | no | 24 h window | rejected, prices USDT instead of USD |
+
+Yahoo's chart endpoint isn't documented, has no published rate limit and Yahoo's terms reserve the data for personal use. That's why AwesomeAPI stays as a documented fallback and why Yahoo is paused for 5 minutes after any failure instead of being retried every minute.
+
+Yahoo answers `USDBRL=X` with either `USDBRL=X` or its alias `BRL=X` in the `symbol` field, so the plugin accepts both as long as `currency` is `BRL`.
+
+AwesomeAPI is served through a CDN with `Cache-Control: max-age=300` and rejects random query strings with a `301` and an `x-api-warn-message` header, so the plugin never tries to bypass its cache.
+
+## Fields and the daily change
+
+| Value | Yahoo Finance | AwesomeAPI |
+|---|---|---|
+| Rate | `regularMarketPrice` | `bid` |
+| Daily change | `regularMarketChangePercent` | `pctChange` |
+| Day high | `regularMarketDayHigh` | `high` |
+| Day low | `regularMarketDayLow` | `low` |
+| Source time | `regularMarketTime` | `timestamp` |
+
+Both sources measure the daily change against the previous close, not against the previous check. On 2026-11-26 Yahoo reported `previousClose` 5.821, and the AwesomeAPI `bid - varBid` matched the same 5.8210 close from its daily history endpoint. The menu shows only values the source returned, rounded to two decimals.
+
+## Validation and cache
+
+A response is accepted only when all of these hold.
+
+- The JSON parses and the pair matches USD/BRL.
+- Rate, high and low are decimal numbers and the rate is above zero.
+- The daily change is a decimal number with an optional sign.
+- The timestamp is a 9 to 11 digit integer.
+
+The quote is stored as one tab-separated line in `~/Library/Caches/usdbrl-swiftbar/last.tsv`, with mode 700 on the directory and 600 on the file. Writes go through a temporary file and `mv`. Reads validate the line again. When a source returns a quote older than the cached one, the plugin keeps the newer quote, which avoids jumping back in time after a fallback.
+
+## Stale states
+
+- Every source fails. The menu bar text gets a `⚠` suffix and the menu shows the reason and the time of the last successful check.
+- The source hasn't published a new quote for more than 15 minutes. The menu shows a warning and the menu bar text stays the same, because a closed market looks the same.
+- Every source fails and there's no valid cache. The menu bar shows `US$ --.-- ⚠`.
+- Yahoo fails and AwesomeAPI answers. The menu shows which source failed, why, and that AwesomeAPI is in use.
+
+Invalid responses include the HTTP status in the reason. The script always ends with `exit 0`, so SwiftBar never swaps the menu for a generic error.
+
+## Privacy
+
+Requests carry the URL, an `Accept` header and the user agent `usdbrl-swiftbar/1.0`. No cookies, credentials or computer identifiers are sent beyond the IP address that any connection exposes.
