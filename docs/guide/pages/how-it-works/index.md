@@ -81,3 +81,10 @@ The target typed in the dialog and the notification text reach AppleScript as `o
 ## Privacy
 
 Requests carry the URL, an `Accept` header and the user agent `usdbrl-swiftbar/1.0`. No cookies, credentials or computer identifiers are sent beyond the IP address that any connection exposes.
+## Higlobe monthly estimate
+
+Payment estimates live in `internal/payout`. The root package owns calculations and local state. `provider` fetches rates, and `desktop` serves the app's local protocol and contains its SwiftUI sources. `internal/menu` owns the provider submenu and menu-bar summary. The main plugin supplies the market quote and dispatches commands to the payout feature.
+
+Choose **Higlobe → Open converter** to edit monthly payments and try one-off amounts. Each payment has a USDC amount and an optional name. The calculator icon opens an on-screen numeric keypad. Changes to a valid payment save when you leave its row or press Return. **Show in menu bar → Higlobe · USDC/BRL** displays the effective rate and adds the estimated BRL total when you have saved payments. Switch back to **USD/BRL rate** at any time without deleting the payments.
+
+While **Higlobe · USDC/BRL** is selected, SwiftBar updates the rate at the configured refresh interval. Choose **Update rate** in the converter to check immediately. The request uses a fixed sample amount. The plugin keeps your names and individual amounts on this Mac and uses the returned rate to calculate your estimates locally. SwiftBar's debug output can include the aggregate shown in the bar. The bar marks the estimate as stale after an hour or a failed update. The public calculator rate can differ from the rate your account offers at withdrawal.

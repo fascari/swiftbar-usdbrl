@@ -4,6 +4,8 @@ See the [shared engineering rules in `fascari/ai-config`](https://github.com/fas
 
 ## Code
 
+- Put reusable code with no project or business dependencies in `pkg/`. Keep feature policy, application workflows, providers, and UI adapters in `internal/`. Packages in `pkg/` must not import `internal/`.
+
 The project started from the `cli-simple` variant of the Go scaffold in [`fascari/scaffold-templates`](https://github.com/fascari/scaffold-templates).
 
 - Keep `cmd/main.go` limited to startup, configuration, and dependency wiring. Put command dispatch and the refresh flow in `internal/cli`, and keep quote fetching, alerts, localization, and menu rendering in their own packages under `internal/`.

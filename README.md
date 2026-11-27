@@ -7,6 +7,7 @@ SwiftBar plugin that shows the USD/BRL exchange rate in the macOS menu bar. The 
 - See the rate and daily change in the menu bar, for example `US$ 5.73 ▼ 1.62%`. Open the menu for the day high, day low, source, and timestamps.
 - Keep the last valid quote visible with a stale warning when both sources fail.
 - Set a target such as `5.80` and get a macOS notification once the rate reaches it.
+- Choose **Higlobe · USDC/BRL** under **Show in menu bar** to see the conversion rate and, if you have saved payments, the estimated BRL total. **Higlobe → Open converter** opens the native editor and simulator.
 - Change the refresh interval or switch between English and Brazilian Portuguese from the menu.
 
 ## Tech stack

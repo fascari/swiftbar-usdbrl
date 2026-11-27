@@ -25,6 +25,8 @@ The installer runs these steps and stops at the first failure.
 4. Downloads `usdbrl-darwin-arm64` for Apple Silicon, including under Rosetta, or `usdbrl-darwin-amd64` for Intel. It compares the SHA-256 with the pin in `install.sh` and checks the binary's format, architecture and version.
 5. Installs the Go binary at `~/Library/Application Support/usdbrl-swiftbar/bin/usdbrl` and the wrapper `usdbrl.<interval>.sh` in the SwiftBar plugin directory. It opens or refreshes SwiftBar.
 
+Releases with the native converter also install `Converter.app` in the same support directory. The installer checks the archive's pinned SHA-256 and the app's code signature. If the converter was open during an update, quit it and open it again from SwiftBar to load the new version.
+
 The plugin binary is not notarized. On Apple Silicon the Go linker signs it ad hoc. The installer downloads it with `curl`, which does not add the browser's quarantine attribute. The installer leaves macOS security settings and quarantine attributes alone. Only `--login-item` asks for Automation permission.
 
 ### Options
@@ -35,6 +37,7 @@ The plugin binary is not notarized. On Apple Silicon the Go linker signs it ad h
 | `--interval <n>` | Refresh interval, such as `30s`, `5m` or `1h`. Defaults to the installed one, or `1m`. |
 | `--plugin <file>` | Install a local Go binary for this Mac instead of downloading the release asset. |
 | `--uninstall` | Remove the plugin, its cache and its settings, keeping SwiftBar. |
+| `--converter <app>` | Install a locally built converter app alongside `--plugin`. |
 
 Running the installer again updates the plugin in place. The pinned checksum protects against a corrupted or altered download, but `install.sh` and the plugin come from the same release, so reading `install.sh` before running it is still the way to trust it.
 
