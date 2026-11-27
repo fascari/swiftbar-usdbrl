@@ -53,7 +53,7 @@ fi
 
 arm_sum=$(checksum "$work/usdbrl-darwin-arm64")
 amd_sum=$(checksum "$work/usdbrl-darwin-amd64")
-bash scripts/build-converter.sh "$work/Converter.app" universal
+bash scripts/build-converter.sh "$work/Converter.app" arm64
 /usr/bin/ditto -c -k --keepParent "$work/Converter.app" "$work/converter.zip"
 converter_sum=$(checksum "$work/converter.zip")
 sed -E \
@@ -62,6 +62,7 @@ sed -E \
   -e "s|^readonly PLUGIN_SHA256_ARM64=.*|readonly PLUGIN_SHA256_ARM64='$arm_sum'|" \
   -e "s|^readonly PLUGIN_SHA256_AMD64=.*|readonly PLUGIN_SHA256_AMD64='$amd_sum'|" \
   -e "s|^readonly CONVERTER_SHA256=.*|readonly CONVERTER_SHA256='$converter_sum'|" install.sh > "$work/install.sh"
+sed -i '' "s|^readonly RELEASE_ARCH=.*|readonly RELEASE_ARCH='arm64'|" "$work/install.sh"
 
 mise run lint
 mise run test
@@ -72,7 +73,7 @@ cat "$work/install.sh" > install.sh
 git commit -q -m "Release $version" -- install.sh
 git tag -a "$version" -m "$version"
 git push -q origin main "$version"
-gh release create "$version" install.sh "$work/usdbrl-darwin-arm64" "$work/usdbrl-darwin-amd64" "$work/converter.zip" --title "$version" --notes "$(
+gh release create "$version" install.sh "$work/usdbrl-darwin-arm64" "$work/converter.zip" --title "$version" --notes "$(
   cat <<EOF
 Install or update:
 
@@ -81,10 +82,11 @@ curl -fsSLO https://github.com/fascari/swiftbar-usdbrl/releases/download/$versio
 bash install.sh
 \`\`\`
 
+This release supports Apple Silicon only. Intel support will be revisited.
+
 Plugin SHA-256:
 
 - Apple Silicon: \`$arm_sum\`
-- Intel: \`$amd_sum\`
 - Conversor: \`$converter_sum\`
 EOF
 )"

@@ -154,7 +154,13 @@ if [ "$(sysctl -n hw.optional.arm64 2>/dev/null || echo 0)" = 1 ]; then
 else
   printf 'skip arm64: requires Apple Silicon\n'
 fi
-if arch -x86_64 /usr/bin/true 2>/dev/null; then
+if grep -qx "readonly RELEASE_ARCH='arm64'" "$installer"; then
+  target=amd64
+  plugins=''
+  expected_version=''
+  reject_install 'this release requires Apple Silicon'
+  printf 'ok   Intel installation rejected\n'
+elif arch -x86_64 /usr/bin/true 2>/dev/null; then
   verify_arch amd64
 else
   printf 'skip amd64: requires Intel or Rosetta\n'

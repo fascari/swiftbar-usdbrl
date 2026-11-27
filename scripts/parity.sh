@@ -16,11 +16,17 @@ unset USDBRL_PLUGIN_PATH
 
 normalize() {
   awk '
+    /^Higlobe \| image=/ { provider = 1; next }
+    provider && /^--/ { next }
+    provider && /^---$/ { next }
+    provider { provider = 0 }
     /^(Show in menu bar|Exibir na barra|Providers|Provedores)$/ { skip = 1; next }
     skip && /^--[^-]|^----/ { next }
     { skip = 0; print }
   ' |
   sed -E \
+    -e 's/ \| sfimage=arrow.clockwise refresh=true/ | refresh=true/' \
+    -e 's/ \| sfimage=bell$//' \
     -e '/^(Checked at |Consultado às ).*/s/[0-9]{2}:[0-9]{2}:[0-9]{2}/<TIME>/' \
     -e '/^(Last successful check|Última consulta bem-sucedida): /s/: .*/: <TIME> (<AGE>)/' \
     -e '/^(Source updated|Atualizado na fonte): /s/ \([^)]*\)$/ (<AGE>)/'

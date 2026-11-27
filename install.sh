@@ -7,6 +7,7 @@ readonly PLUGIN_BUILD='20261126.222409'
 readonly PLUGIN_SHA256_ARM64='ffde27d1088170bb1d9516165a3b23ee156ce129d8935404653fabb6f255666b'
 readonly PLUGIN_SHA256_AMD64='e71c9dc73c7e905961d061a509ed63b410d7ae3e40ead035241b5114e9532812'
 readonly CONVERTER_SHA256='unreleased'
+readonly RELEASE_ARCH='all'
 
 readonly REPO='fascari/swiftbar-usdbrl'
 readonly APP='/Applications/SwiftBar.app'
@@ -395,6 +396,9 @@ main() {
   done
 
   [ "$(uname -s)" = Darwin ] || die "macOS only"
+  if [ "$mode" = install ] && [ "$RELEASE_ARCH" = arm64 ] && [ "$(hardware_arch)" != arm64 ]; then
+    die "this release requires Apple Silicon"
+  fi
   case $mode in
     install) install_plugin "$interval" "$local_plugin" "$login_item" ;;
     uninstall) uninstall_plugin ;;
