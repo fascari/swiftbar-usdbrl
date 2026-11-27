@@ -4,11 +4,12 @@ import (
 	"context"
 	"crypto/tls"
 	"errors"
-	"io"
 	"net"
 	"net/http"
 	"net/http/httptrace"
 	"time"
+
+	"github.com/fascari/swiftbar-usdbrl/pkg/boundedio"
 )
 
 const (
@@ -104,16 +105,16 @@ func readResponse(resp *http.Response) ([]byte, error) {
 		return nil, responseError(Other, status)
 	}
 
-	body, err := io.ReadAll(io.LimitReader(resp.Body, maxBodyBytes+1))
+	body, err := boundedio.ReadAll(resp.Body, maxBodyBytes)
+	if errors.Is(err, boundedio.ErrLimit) {
+		return nil, responseError(Other, status)
+	}
 	if err != nil {
 		kind := requestError(err).Kind
 		if kind != NoConnection {
 			kind = HTTPError
 		}
 		return nil, responseError(kind, status)
-	}
-	if len(body) > maxBodyBytes {
-		return nil, responseError(Other, status)
 	}
 	return body, nil
 }

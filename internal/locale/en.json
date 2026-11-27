@@ -34,5 +34,19 @@
   "request_tls": "TLS verification failed",
   "request_invalid": "invalid response (HTTP %d)",
   "just_now": "just now",
-  "ago": "%s ago"
+  "ago": "%s ago",
+  "conversion_open": "Open converter…",
+  "display": "Show in menu bar",
+  "market_quote": "Market quote · USD/BRL",
+  "display_usd": "USD/BRL rate",
+  "conversion_total": "Estimated monthly total: R$ %s",
+  "conversion_no_payments": "Open the converter to add a payment.",
+  "conversion_no_rate": "No rate checked yet. Open the converter to update it.",
+  "conversion_failed": "Could not get the rate. Open the converter to try again.",
+  "conversion_attempted": "Last attempt failed at %s",
+  "conversion_rate": "Effective reference rate: R$ %s per %s",
+  "conversion_checked": "Rate checked at %s",
+  "conversion_stale": "Rate is out of date",
+  "conversion_invalid_amount": "Enter a positive amount in %s with up to two decimal places.",
+  "conversion_link": "Open website"
 }

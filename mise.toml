@@ -37,7 +37,8 @@ run = [
   "bash -n test/installer.sh",
   "bash -n scripts/release.sh",
   "bash -n scripts/parity.sh",
-  "shellcheck -s bash install.sh test/smoke.sh test/installer.sh scripts/release.sh scripts/parity.sh",
+  "bash -n scripts/build-converter.sh",
+  "shellcheck -s bash install.sh test/smoke.sh test/installer.sh scripts/release.sh scripts/parity.sh scripts/build-converter.sh",
 ]
 
 [tasks.test]
@@ -53,8 +54,12 @@ run = "bash test/smoke.sh"
 [tasks.install]
 description = "Install SwiftBar if needed and this working copy of the plugin (extra flags go to install.sh)"
 # noinspection TomlUnresolvedReference
-depends = ["build", "check"]
-run = "bash install.sh --plugin bin/usdbrl"
+depends = ["build", "check", "build-converter"]
+run = "bash install.sh --plugin bin/usdbrl --converter bin/Converter.app"
+
+[tasks.build-converter]
+description = "Build the SwiftUI payment converter for this Mac"
+run = "mkdir -p bin && bash scripts/build-converter.sh"
 
 [tasks.uninstall]
 description = "Remove the plugin, its cache and settings (keeps SwiftBar)"

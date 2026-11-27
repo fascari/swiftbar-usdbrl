@@ -13,6 +13,7 @@ import (
 	"github.com/fascari/swiftbar-usdbrl/internal/alert"
 	"github.com/fascari/swiftbar-usdbrl/internal/cli/mocks"
 	"github.com/fascari/swiftbar-usdbrl/internal/menu"
+	"github.com/fascari/swiftbar-usdbrl/internal/payout/provider"
 	"github.com/fascari/swiftbar-usdbrl/internal/quote"
 )
 
@@ -20,6 +21,38 @@ const (
 	yahooURL   = "https://query1.finance.yahoo.com"
 	awesomeURL = "https://economia.awesomeapi.com.br"
 )
+
+func TestRefresh_ShouldFetchSelectedProviderOnEachInterval(t *testing.T) {
+	cfg := config(t)
+	now := cfg.Now()
+	cfg.Now = func() time.Time { return now }
+	sources := mocks.NewSources(t)
+	sources.EXPECT().Fetch(mock.Anything, quote.Yahoo, yahooURL).
+		Return(rate(quote.Yahoo, now), nil).Times(4)
+	const providerID = "higlobe"
+	var fetched int
+	source := provider.Source{
+		Details: provider.Details{ID: providerID, Currency: "USDC"},
+		Fetch: func(context.Context) (string, error) {
+			fetched++
+			if fetched == 1 {
+				return "5", nil
+			}
+			return "5.5", nil
+		},
+	}
+	runner := New(cfg, Dependencies{Sources: sources, providers: []provider.Source{source}})
+	runner.Run(t.Context(), nil)
+	require.Zero(t, fetched)
+	runner.Run(t.Context(), []string{string(menu.SetDisplay), providerID})
+
+	require.Contains(t, runner.Run(t.Context(), nil), "R$ 5.0000/USDC\n")
+	runner.Run(t.Context(), nil)
+	require.Equal(t, 1, fetched)
+	now = now.Add(time.Minute)
+	require.Contains(t, runner.Run(t.Context(), nil), "R$ 5.5000/USDC ▲ 10.00%")
+	require.Equal(t, 2, fetched)
+}
 
 func TestRefresh_ShouldFallBackToAwesomeAPI(t *testing.T) {
 	cfg := config(t)

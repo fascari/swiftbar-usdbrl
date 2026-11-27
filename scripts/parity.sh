@@ -15,6 +15,11 @@ export SWIFTBAR_PLUGIN_PATH="$work/SwiftBar Plugins/usdbrl.5m.sh"
 unset USDBRL_PLUGIN_PATH
 
 normalize() {
+  awk '
+    /^(Show in menu bar|Exibir na barra|Providers|Provedores)$/ { skip = 1; next }
+    skip && /^--[^-]|^----/ { next }
+    { skip = 0; print }
+  ' |
   sed -E \
     -e '/^(Checked at |Consultado às ).*/s/[0-9]{2}:[0-9]{2}:[0-9]{2}/<TIME>/' \
     -e '/^(Last successful check|Última consulta bem-sucedida): /s/: .*/: <TIME> (<AGE>)/' \

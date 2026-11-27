@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 )
 
+// Write replaces path with a private file in the same directory.
 func Write(path, text string) error {
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0o700); err != nil {

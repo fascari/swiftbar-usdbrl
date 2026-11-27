@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"fmt"
 	"math"
+	"strconv"
 	"time"
 
 	"github.com/fascari/swiftbar-usdbrl/internal/alert"
@@ -15,15 +16,16 @@ const staleAfter = 15 * time.Minute
 
 type (
 	View struct {
-		Quote    *quote.Quote
-		Reason   string
-		Warning  string
-		LastOK   time.Time
-		Now      time.Time
-		Location *time.Location
-		Language locale.Code
-		Plugin   string
-		Alerts   []alert.Alert
+		Quote     *quote.Quote
+		Reason    string
+		Warning   string
+		LastOK    time.Time
+		Now       time.Time
+		Location  *time.Location
+		Language  locale.Code
+		Plugin    string
+		Alerts    []alert.Alert
+		Providers []ProviderView
 	}
 
 	renderer struct {
@@ -53,8 +55,7 @@ func (r renderer) body() {
 }
 
 func (r renderer) empty() {
-	r.out.line("US$ --.-- ⚠")
-	r.out.separator()
+	r.bar("US$ --.-- ⚠", "")
 	r.out.line(fmt.Sprintf("⚠ %s: %s", r.s.Text("no_quote"), cmp.Or(r.v.Reason, r.s.Text("invalid_cache"))), warnColor)
 	r.out.line(r.s.Text("no_cache"))
 }
@@ -67,9 +68,12 @@ func (r renderer) quote(q quote.Quote) {
 	if r.v.Reason != "" {
 		bar += " ⚠"
 	}
-	r.out.line(bar, color)
-	r.out.separator()
-	r.out.linef("%s: R$ %s", r.s.Text("current"), price)
+	converting := r.bar(bar, color)
+	label := r.s.Text("current")
+	if converting {
+		price = r.s.Decimal(strconv.FormatFloat(q.Price, 'f', 5, 64))
+	}
+	r.out.linef("%s: R$ %s", label, price)
 	r.out.line(fmt.Sprintf("%s: %s %s%%", r.s.Text("change"), arrow, change), color)
 	r.out.linef("%s: R$ %s", r.s.Text("high"), r.s.Number(q.High))
 	r.out.linef("%s: R$ %s", r.s.Text("low"), r.s.Number(q.Low))
@@ -83,6 +87,19 @@ func (r renderer) quote(q quote.Quote) {
 	}
 	name, href := q.Source.Attribution()
 	r.out.line(fmt.Sprintf("%s: %s", r.s.Text("source"), name), "href="+href)
+}
+
+func (r renderer) bar(label, color string) bool {
+	if converted, style, active := r.conversionBar(); active {
+		r.out.line(converted, style)
+		r.out.separator()
+		r.out.line(r.s.Text("market_quote"), "sfimage=chart.line.uptrend.xyaxis")
+		r.out.prefix = "--"
+		return true
+	}
+	r.out.line(label, color)
+	r.out.separator()
+	return false
 }
 
 func (r renderer) changeIndicator(changePct float64, formatted string) (arrow, color string) {

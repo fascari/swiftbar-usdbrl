@@ -3,6 +3,7 @@ package menu
 import (
 	"github.com/fascari/swiftbar-usdbrl/internal/alert"
 	"github.com/fascari/swiftbar-usdbrl/internal/locale"
+	"github.com/fascari/swiftbar-usdbrl/pkg/swiftbartext"
 )
 
 var languages = [...]struct {
@@ -20,15 +21,24 @@ var languages = [...]struct {
 }
 
 func (r renderer) footer() {
+	marketSubmenu := r.out.prefix != ""
+	if marketSubmenu {
+		r.out.separator()
+		r.alerts()
+		r.out.prefix = ""
+	}
 	r.out.separator()
-	r.out.line(r.s.Text("refresh"), "refresh=true")
-	r.alerts()
+	r.out.line(r.s.Text("refresh"), "sfimage=arrow.clockwise", "refresh=true")
+	r.providers()
+	if !marketSubmenu {
+		r.alerts()
+	}
 	r.intervals()
 	r.languages()
 }
 
 func (r renderer) alerts() {
-	r.out.line(r.s.Text("alerts"))
+	r.out.line(r.s.Text("alerts"), "sfimage=bell")
 	for _, a := range r.v.Alerts {
 		sign := "≤"
 		if a.Direction == alert.Above {
@@ -52,7 +62,7 @@ func (r renderer) intervals() {
 	current, _ := IntervalOf(r.v.Plugin)
 	for _, interval := range intervals {
 		params := command(r.v.Plugin, ActionSetInterval, interval)
-		r.out.item(intervalLabel(interval), append(params, "terminal=false", checked(interval == current))...)
+		r.out.item(intervalLabel(interval), append(params, "terminal=false", swiftbartext.Checked(interval == current))...)
 	}
 }
 
@@ -61,6 +71,6 @@ func (r renderer) languages() {
 	current := locale.Resolve(r.v.Language)
 	for _, language := range languages {
 		params := command(r.v.Plugin, ActionSetLanguage, string(language.code))
-		r.out.item(language.name, append(params, "terminal=false", "refresh=true", checked(language.code == current))...)
+		r.out.item(language.name, append(params, "terminal=false", "refresh=true", swiftbartext.Checked(language.code == current))...)
 	}
 }

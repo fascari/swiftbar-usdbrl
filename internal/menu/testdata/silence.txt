@@ -10,8 +10,8 @@ Checked at 14:59:30
 ⚠ Stale quote: last source quote 15 min ago (market may be closed) | color=#bc4c00,#ffa657
 Source: Yahoo Finance | href=https://finance.yahoo.com/quote/USDBRL%3DX/
 ---
-Refresh now | refresh=true
-Alerts
+Refresh now | sfimage=arrow.clockwise refresh=true
+Alerts | sfimage=bell
 --≥ R$ 5.80 | bash="/tmp/SwiftBar Plugins/usdbrl.5m.sh" param1=--remove-alert param2=above param3=5.80 terminal=false refresh=true
 --≤ R$ 5.60 | bash="/tmp/SwiftBar Plugins/usdbrl.5m.sh" param1=--remove-alert param2=below param3=5.6 terminal=false refresh=true
 --Add alert… | bash="/tmp/SwiftBar Plugins/usdbrl.5m.sh" param1=--add-alert terminal=false refresh=true

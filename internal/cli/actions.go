@@ -8,10 +8,11 @@ import (
 	"path/filepath"
 
 	"github.com/fascari/swiftbar-usdbrl/internal/alert"
-	"github.com/fascari/swiftbar-usdbrl/internal/atomicfile"
-	"github.com/fascari/swiftbar-usdbrl/internal/filelock"
 	"github.com/fascari/swiftbar-usdbrl/internal/locale"
 	"github.com/fascari/swiftbar-usdbrl/internal/menu"
+	"github.com/fascari/swiftbar-usdbrl/pkg/atomicfile"
+	"github.com/fascari/swiftbar-usdbrl/pkg/filelock"
+	"github.com/fascari/swiftbar-usdbrl/pkg/utf8text"
 )
 
 var errInvalidTarget = errors.New("no valid alert target")
@@ -32,6 +33,8 @@ func (r Runner) handleAction(ctx context.Context, args []string) {
 		r.removeAlert(args[1:])
 	case menu.ActionClearAlerts:
 		r.clearAlerts()
+	default:
+		r.menuPlugin().Handle(ctx, menu.Action(args[0]), value)
 	}
 }
 
@@ -109,7 +112,7 @@ func (r Runner) alertTarget(ctx context.Context, value string, price float64) (s
 			return target, nil
 		}
 		answer = text
-		prompt = fmt.Sprintf(s.Text("alert_invalid"), prefix(text, 20)) + "\n\n" + basePrompt
+		prompt = fmt.Sprintf(s.Text("alert_invalid"), utf8text.Prefix(text, 20)) + "\n\n" + basePrompt
 	}
 	return "", errInvalidTarget
 }

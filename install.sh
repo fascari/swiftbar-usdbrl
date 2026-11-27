@@ -6,6 +6,7 @@ readonly VERSION='v2.0.2'
 readonly PLUGIN_BUILD='20261126.222409'
 readonly PLUGIN_SHA256_ARM64='ffde27d1088170bb1d9516165a3b23ee156ce129d8935404653fabb6f255666b'
 readonly PLUGIN_SHA256_AMD64='e71c9dc73c7e905961d061a509ed63b410d7ae3e40ead035241b5114e9532812'
+readonly CONVERTER_SHA256='unreleased'
 
 readonly REPO='fascari/swiftbar-usdbrl'
 readonly APP='/Applications/SwiftBar.app'
@@ -28,12 +29,13 @@ die() {
 usage() {
   cat <<'EOF'
 Usage:
-  install.sh [--login-item] [--interval <n>] [--plugin <file>]
+  install.sh [--login-item] [--interval <n>] [--plugin <file>] [--converter <app>]
   install.sh --uninstall
 
   --login-item     also start SwiftBar at login (macOS may ask for Automation permission)
   --interval <n>   refresh interval (30s, 1m, 5m, 1h...); keeps the installed one, or 1m
   --plugin <file>  install a local Go binary instead of downloading the release asset
+  --converter <app>  install a local converter app alongside a local plugin
   --uninstall      remove the plugin and its cache and settings, keeping SwiftBar
 EOF
 }
@@ -151,7 +153,66 @@ cleanup_install() {
   [ -z "$staged_wrapper" ] || rm -f "$staged_wrapper"
   [ -z "$staged_binary" ] || rm -f "$staged_binary"
   rm -f "$work_dir/plugin"
+  rm -rf "$work_dir/Converter.app" "$work_dir/converter.zip"
   rmdir "$work_dir"
+}
+
+prepare_converter() {
+  local work=$1 local_app=$2 local_plugin=$3 sum
+  if [ -n "$local_app" ]; then
+    [ -n "$local_plugin" ] || die "--converter requires --plugin"
+    /usr/bin/ditto "$local_app" "$work/Converter.app"
+  elif [ -z "$local_plugin" ] && [ "$CONVERTER_SHA256" != unreleased ]; then
+    curl -q -fsSL --proto '=https' --proto-redir '=https' --tlsv1.2 --max-time 60 \
+      -o "$work/converter.zip" "https://github.com/$REPO/releases/download/$VERSION/converter.zip" ||
+      die "converter download failed"
+    sum=$(shasum -a 256 "$work/converter.zip" | awk '{ print $1 }')
+    [ "$sum" = "$CONVERTER_SHA256" ] || die "converter checksum mismatch"
+    /usr/bin/ditto -x -k "$work/converter.zip" "$work"
+  else
+    return 0
+  fi
+  [ -x "$work/Converter.app/Contents/MacOS/Converter" ] || die "converter executable missing"
+  codesign --verify --deep --strict "$work/Converter.app" || die "invalid converter signature"
+}
+
+cleanup_converter_stage() {
+  local stage=$1
+  [ -n "$stage" ] || return 0
+  if [ -e "$stage/previous" ] || [ -L "$stage/previous" ]; then
+    log "Previous converter preserved at $stage/previous"
+    return 0
+  fi
+  rm -rf "$stage"
+}
+
+restore_wrappers() {
+  local stage=$1 plugin_dir=$2 previous
+  [ -n "$stage" ] || return 0
+  for previous in "$stage"/usdbrl.*.sh; do
+    [ -e "$previous" ] || [ -L "$previous" ] || continue
+    mv "$previous" "$plugin_dir/${previous##*/}" || return 1
+  done
+  rmdir "$stage"
+}
+
+replace_with_converter() {
+  local staged=$1 staged_wrapper=$2 wrapper=$3
+  local app="$CONFIG_DIR/Converter.app" backup="$CONVERTER_STAGE/previous"
+  if [ -e "$app" ] || [ -L "$app" ]; then
+    mv "$app" "$backup" || die "could not back up the converter"
+  fi
+  if mv "$CONVERTER_STAGE/Converter.app" "$app"; then
+    if (replace_plugin "$staged" "$staged_wrapper" "$wrapper"); then
+      rm -rf "$backup"
+      return
+    fi
+    mv "$app" "$CONVERTER_STAGE/Converter.app" || die "could not move the new converter out of the way"
+  fi
+  if [ -e "$backup" ] || [ -L "$backup" ]; then
+    mv "$backup" "$app" || die "could not restore the converter from $backup"
+  fi
+  die "could not install converter and plugin"
 }
 
 add_login_item() {
@@ -227,8 +288,11 @@ install_plugin() (
   require_supported_macos
 
   work_dir=$(mktemp -d)
-  trap 'cleanup_install "$work_dir" "$staged_binary" "$staged_wrapper"' EXIT
+  local CONVERTER_STAGE=''
+  local wrapper_stage=''
+  trap 'restore_wrappers "$wrapper_stage" "${plugin_dir:-}"; cleanup_install "$work_dir" "$staged_binary" "$staged_wrapper"; cleanup_converter_stage "$CONVERTER_STAGE"' EXIT
   prepare_binary "$work_dir/plugin" "$local_plugin"
+  prepare_converter "$work_dir" "${local_converter:-}" "$local_plugin"
   if [ -n "$local_plugin" ]; then
     build=$(stat -f '%Sm' -t '%Y%m%d.%H%M%S' -- "$local_plugin")
   elif [ -z "$build" ]; then
@@ -259,10 +323,22 @@ install_plugin() (
   bash -n "$staged_wrapper"
   chmod 700 "$staged_wrapper"
 
-  replace_plugin "$staged_binary" "$staged_wrapper" "$wrapper"
+  wrapper_stage=$(mktemp -d "$plugin_dir/.usdbrl-wrappers.XXXXXX")
   for existing in "$plugin_dir"/usdbrl.*.sh; do
-    [ "$existing" = "$wrapper" ] || rm -f "$existing"
+    [ -e "$existing" ] || [ -L "$existing" ] || continue
+    [ "$existing" = "$wrapper" ] && continue
+    mv "$existing" "$wrapper_stage/${existing##*/}" || die "could not stage previous wrapper"
   done
+  if [ -d "$work_dir/Converter.app" ]; then
+    CONVERTER_STAGE=$(mktemp -d "$CONFIG_DIR/.converter-install.XXXXXX")
+    /usr/bin/ditto "$work_dir/Converter.app" "$CONVERTER_STAGE/Converter.app"
+    replace_with_converter "$staged_binary" "$staged_wrapper" "$wrapper"
+  else
+    replace_plugin "$staged_binary" "$staged_wrapper" "$wrapper"
+  fi
+  existing=$wrapper_stage
+  wrapper_stage=''
+  rm -rf "$existing"
   log "Installed $wrapper"
 
   if [ "$login_item" = 1 ]; then
@@ -305,6 +381,10 @@ main() {
         ;;
       --plugin)
         local_plugin=${2:?--plugin needs a file}
+        shift
+        ;;
+      --converter)
+        local_converter=${2:?--converter needs an app}
         shift
         ;;
       --uninstall) mode=uninstall ;;

@@ -50,7 +50,11 @@ run_installer() (
       esac
       shift
     done
-    [[ $url = "https://github.com/fascari/swiftbar-usdbrl/releases/download/$expected_version/usdbrl-darwin-$target" ]] || return 1
+    case $url in
+      "https://github.com/fascari/swiftbar-usdbrl/releases/download/$expected_version/usdbrl-darwin-$target" | \
+      "https://github.com/fascari/swiftbar-usdbrl/releases/download/$expected_version/converter.zip") ;;
+      *) return 1 ;;
+    esac
     cp "$assets/${url##*/}" "$output"
     if [ "${corrupt:-0}" = 1 ]; then
       printf 'invalid\n' >>"$output"
@@ -105,6 +109,11 @@ verify_arch() {
 
   run_installer
   cmp "$config/bin/usdbrl" "$assets/usdbrl-darwin-$target"
+  if [ -f "$assets/converter.zip" ]; then
+    codesign --verify --deep --strict "$config/Converter.app"
+    fail_wrapper=1 reject_install 'could not install plugin wrapper'
+    codesign --verify --deep --strict "$config/Converter.app"
+  fi
   [ "$(stat -f %Lp "$wrapper")" = 700 ]
   [ "$(stat -f %Lp "$config/bin/usdbrl")" = 700 ]
   [ "$(cat "$config/lang")" = en ]

@@ -9,6 +9,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/fascari/swiftbar-usdbrl/pkg/decimaltext"
 )
 
 const (
@@ -69,6 +71,20 @@ func (l Language) Number(value float64) string {
 		return strings.Replace(text, ".", ",", 1)
 	}
 	return text
+}
+
+func (l Language) Decimal(value string) string {
+	if l.portuguese {
+		return strings.Replace(value, ".", ",", 1)
+	}
+	return value
+}
+
+func (l Language) Cents(cents int64) string {
+	if l.portuguese {
+		return decimaltext.Cents(cents, ",", ".")
+	}
+	return decimaltext.Cents(cents, ".", ",")
 }
 
 func (l Language) Stamp(at time.Time, loc *time.Location) string {

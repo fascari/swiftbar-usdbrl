@@ -34,5 +34,19 @@
   "request_tls": "falha na verificação TLS",
   "request_invalid": "resposta inválida (HTTP %d)",
   "just_now": "há instantes",
-  "ago": "há %s"
+  "ago": "há %s",
+  "conversion_open": "Abrir conversor…",
+  "display": "Exibir na barra",
+  "market_quote": "Cotação de mercado · USD/BRL",
+  "display_usd": "Cotação USD/BRL",
+  "conversion_total": "Total mensal estimado: R$ %s",
+  "conversion_no_payments": "Abra o conversor para adicionar um pagamento.",
+  "conversion_no_rate": "Nenhuma cotação consultada. Abra o conversor para atualizar.",
+  "conversion_failed": "Não foi possível consultar a cotação. Abra o conversor e tente novamente.",
+  "conversion_attempted": "Última tentativa falhou em %s",
+  "conversion_rate": "Taxa efetiva de referência: R$ %s por %s",
+  "conversion_checked": "Cotação consultada em %s",
+  "conversion_stale": "Cotação desatualizada",
+  "conversion_invalid_amount": "Use um valor positivo em %s com até duas casas decimais.",
+  "conversion_link": "Abrir site"
 }

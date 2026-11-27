@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/fascari/swiftbar-usdbrl/internal/osascript"
+	"github.com/fascari/swiftbar-usdbrl/internal/payout/provider"
 	"github.com/fascari/swiftbar-usdbrl/internal/quote"
 )
 
@@ -58,5 +59,9 @@ func DependenciesFromEnvironment() Dependencies {
 		Sources:  quote.NewClient(nil),
 		Notifier: script,
 		Prompter: script,
+		providers: []provider.Source{provider.HiglobeClient{
+			URL: cmp.Or(os.Getenv("USDBRL_HIGLOBE_URL"), provider.HiglobeURL),
+			Now: time.Now,
+		}.Source()},
 	}
 }

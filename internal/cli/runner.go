@@ -5,12 +5,14 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
-	"unicode/utf8"
 
 	"github.com/fascari/swiftbar-usdbrl/internal/locale"
 	"github.com/fascari/swiftbar-usdbrl/internal/menu"
+	"github.com/fascari/swiftbar-usdbrl/internal/payout/desktop"
+	"github.com/fascari/swiftbar-usdbrl/internal/payout/provider"
 	"github.com/fascari/swiftbar-usdbrl/internal/quote"
 )
 
@@ -40,9 +42,10 @@ type (
 	}
 
 	Dependencies struct {
-		Sources  Sources
-		Notifier Notifier
-		Prompter Prompter
+		Sources   Sources
+		Notifier  Notifier
+		Prompter  Prompter
+		providers []provider.Source
 	}
 
 	Runner struct {
@@ -80,16 +83,31 @@ func (r Runner) Run(ctx context.Context, args []string) string {
 	if len(args) == 0 {
 		return r.refresh(ctx)
 	}
+	if args[0] == desktop.Flag {
+		var market string
+		if cached, _ := r.cache(); cached != nil {
+			market = strconv.FormatFloat(cached.Price, 'f', -1, 64)
+		}
+		return r.menuPlugin().Desktop(ctx, os.Stdin, market)
+	}
 	r.handleAction(ctx, args)
 	return ""
 }
 
 func (r Runner) Empty() string {
 	return menu.Render(menu.View{
-		Language: r.language(),
-		Plugin:   r.cfg.PluginPath,
-		Alerts:   r.alerts(),
+		Language:  r.language(),
+		Plugin:    r.cfg.PluginPath,
+		Alerts:    r.alerts(),
+		Providers: r.menuPlugin().Views(),
 	})
+}
+
+func (r Runner) menuPlugin() menu.Plugin {
+	return menu.Plugin{
+		ConfigDir: r.cfg.ConfigDir, CacheDir: r.cfg.CacheDir, PluginPath: r.cfg.PluginPath,
+		Language: r.language(), Now: r.now, Providers: r.dep.providers,
+	}
 }
 
 func MissingHomeMenu() string {
@@ -132,15 +150,4 @@ func (r Runner) cache() (*quote.Quote, time.Time) {
 		return nil, time.Time{}
 	}
 	return new(q), info.ModTime()
-}
-
-// prefix cuts at a UTF-8 character boundary within the byte limit.
-func prefix(text string, bytes int) string {
-	if len(text) <= bytes {
-		return text
-	}
-	for bytes > 0 && !utf8.RuneStart(text[bytes]) {
-		bytes--
-	}
-	return text[:bytes]
 }

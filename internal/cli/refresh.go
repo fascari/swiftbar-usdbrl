@@ -10,11 +10,12 @@ import (
 	"time"
 
 	"github.com/fascari/swiftbar-usdbrl/internal/alert"
-	"github.com/fascari/swiftbar-usdbrl/internal/atomicfile"
-	"github.com/fascari/swiftbar-usdbrl/internal/filelock"
 	"github.com/fascari/swiftbar-usdbrl/internal/locale"
 	"github.com/fascari/swiftbar-usdbrl/internal/menu"
 	"github.com/fascari/swiftbar-usdbrl/internal/quote"
+	"github.com/fascari/swiftbar-usdbrl/pkg/atomicfile"
+	"github.com/fascari/swiftbar-usdbrl/pkg/filelock"
+	"github.com/fascari/swiftbar-usdbrl/pkg/utf8text"
 )
 
 const yahooPause = 5 * time.Minute
@@ -30,6 +31,7 @@ func (r Runner) refresh(ctx context.Context) string {
 		}
 		_ = r.dep.Notifier.Notify(ctx, message)
 	}
+	view.Providers = r.menuPlugin().RefreshViews(ctx)
 	return menu.Render(view)
 }
 
@@ -101,7 +103,7 @@ func (r Runner) pausedWarning(s locale.Language) (string, bool) {
 		return "", false
 	}
 	data, _ := os.ReadFile(r.paths.pause)
-	reason := strings.NewReplacer("|", "", "\n", "", "\r", "").Replace(prefix(string(data), 120))
+	reason := strings.NewReplacer("|", "", "\n", "", "\r", "").Replace(utf8text.Prefix(string(data), 120))
 	return fmt.Sprintf(s.Text("yahoo_paused"), cmp.Or(reason, "?")), true
 }
 
